@@ -1,5 +1,6 @@
 import Common.DivsCoreData;
 import Common.DivsExcelData;
+import Common.RapidAPIData;
 import com.codeborne.selenide.Configuration;
 import org.apache.commons.io.FileUtils;
 import org.apache.poi.ss.usermodel.Cell;
@@ -86,9 +87,12 @@ public class Base {
         logger.log(Level.INFO, "параметр TTM P/E - срок окупаемости инвестиций в акции компании в годах - для американского рынка не должен превышать 21");
         companies = divsExcelData.filterCompanies(EPSValue.getColumnIndex()+1,"21.00");
 
+        //считываем тикеры компаний
+        RapidAPIData rapidAPIData = new RapidAPIData();
+        rapidAPIData.tickers = divsExcelData.getCompaniesTickersByNames(companiesSheet);
 
         logger.log(Level.INFO, "сохраняем результаты фильтров в файле...");
-        String resultName = Configuration.reportsFolder + "\\USDividendChampions_filtered";
+//        String resultName = Configuration.reportsFolder + "\\USDividendChampions_filtered";
 //        File resultFileName = new File(resultName + ".xlsx");
 //        divsExcelData.saveFilteredResults(companiesBook,resultFileName);
     }

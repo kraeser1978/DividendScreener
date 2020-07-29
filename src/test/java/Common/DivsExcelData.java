@@ -72,6 +72,25 @@ public class DivsExcelData {
         return companyNames;
     }
 
+    public ArrayList<String> getCompaniesTickersByNames(XSSFSheet sheet){
+        ArrayList<String> tickers = new ArrayList<String>();
+        //определяем порядковый номер поля с тикером
+        Cell ticker = findCell(sheet,"Symbol");
+        int symbolColumn = ticker.getColumnIndex();
+        //для каждой отобранной компании считываем ее тикер
+        for (int i=0; i< companyNames.size(); i++){
+            //находим ячейку с уникальным именем компании
+            Cell name = findCell(sheet,companyNames.get(i));
+            //считываем всю строку с найденной ячейкой
+            XSSFRow row = (XSSFRow) name.getRow();
+            //считываем тикер в строке
+            Cell cell = row.getCell(symbolColumn);
+            //добавляем тике в массив
+            tickers.add(cell.getStringCellValue());
+        }
+        return tickers;
+    }
+
     public static XSSFRow findCompanyRow(XSSFSheet sheet, String companyName) {
         XSSFRow companyRow = null;
         //задаем границы поиска - первую и последнюю строку списка компаний
