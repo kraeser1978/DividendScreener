@@ -7,6 +7,7 @@ import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.util.CellAddress;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.json.JSONArray;
 import org.junit.Test;
 import java.io.File;
 import java.text.DateFormat;
@@ -22,16 +23,40 @@ import static com.codeborne.selenide.Selenide.download;
 public class Base {
     private static Logger logger = Logger.getLogger(Base.class.getSimpleName());
     ArrayList<String> companies = new ArrayList<String>();
+    ArrayList<String> tickers = new ArrayList<String>();
+
+    @Test
+    public void run() throws Exception {
+        DivsCoreData.SetUp();
+        RapidAPIData rapidAPIData = new RapidAPIData();
+        rapidAPIData.tickers.add("AMP");
+        rapidAPIData.tickers.add("BBY");
+        rapidAPIData.tickers.add("CBU");
+        rapidAPIData.tickers.add("GD");
+        rapidAPIData.tickers.add("KMB");
+        rapidAPIData.tickers.add("LMT");
+//        rapidAPIData.tickers.add("LNT");
+        rapidAPIData.tickers.add("MXIM");
+        rapidAPIData.tickers.add("OZK");
+        rapidAPIData.tickers.add("SRE");
+        rapidAPIData.tickers.add("THG");
+        rapidAPIData.tickers.add("TROW");
+        rapidAPIData.tickers.add("TRV");
+//        rapidAPIData.tickers.add("VZ");
+        tickers = rapidAPIData.checkIncomeGrowth();
+        logger.log(Level.INFO,"отработало");
+    }
 
     @Test
     public void main() throws Exception {
         logger.log(Level.INFO,"считываем настройки...");
-        new DivsCoreData().SetUp();
+        DivsCoreData divsCoreData = new DivsCoreData();
+        divsCoreData.SetUp();
 //        String downloadedName = Configuration.reportsFolder + "\\USDividendChampions";
 //        File downloadedXlsFile = new File(downloadedName + ".xlsx");
 //        File downloadedFile = new File(downloadedName);
 //        logger.log(Level.INFO, "загружаем Excel файл с дивидендами в папку, указанную в файле параметров");
-//        download("https://bitly.com/USDividendChampions", 5000);
+//        download(divsCoreData.props.dripinvestingURL(), 5000);
 //        logger.log(Level.INFO, "файл скачан");
 //        //переименовываем файл
 //        //удаляем предыдущую версию, если она существует
@@ -89,7 +114,15 @@ public class Base {
 
         //считываем тикеры компаний
         RapidAPIData rapidAPIData = new RapidAPIData();
+        //передаем массив тикеров в класс для выполнения REST запросов к market data source
         rapidAPIData.tickers = divsExcelData.getCompaniesTickersByNames(companiesSheet);
+        logger.log(Level.INFO, "сравниваем прирост стоимости акций компаний с приростом стоимости эталонного ETF SDY за прошедшие 10 лет...");
+        logger.log(Level.INFO, "если актив вырос меньше SDY, компания исключается из выборки");
+        tickers = rapidAPIData.compareStockAgainstEthalonETF();
+
+        logger.log(Level.INFO, "метод проверяет актив на наличие поступательного роста его дивидендов в течение 10 прошедших лет");
+        logger.log(Level.INFO, "если компания на каком-либо участке исторических данных снижала выплаты по дивидендам, она исключается из выборки");
+        tickers = rapidAPIData.checkDividendsGrowth();
 
         logger.log(Level.INFO, "сохраняем результаты фильтров в файле...");
 //        String resultName = Configuration.reportsFolder + "\\USDividendChampions_filtered";

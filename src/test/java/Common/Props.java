@@ -29,24 +29,32 @@ public class Props {
         return properties.getProperty("driver_path");
     }
 
-    public String appURL(){
-        return properties.getProperty("rmanpo_url");
+    public String dripinvestingURL(){
+        return properties.getProperty("dripinvesting_url");
     }
 
-    public String userName(){
-        return properties.getProperty("user_name");
+    public String coreURL(){
+        return properties.getProperty("core_url");
     }
 
-    public String userPass(){
-        return properties.getProperty("password");
+    public String APIURL(){
+        return properties.getProperty("API_URL");
     }
 
-    public String passportScanFile(){
-        return properties.getProperty("passport_scan_file_path");
+    public String rapidHost(){
+        return properties.getProperty("rapidHost");
     }
 
-    public String snilsScanFile(){
-        return properties.getProperty("snils_scan_file_path");
+    public String rapidHostValue(){
+        return properties.getProperty("rapidHostValue");
+    }
+
+    public String rapidKey(){
+        return properties.getProperty("rapidKey");
+    }
+
+    public String rapidKeyValue(){
+        return properties.getProperty("rapidKeyValue");
     }
 
     public String screenshotsFolder(){

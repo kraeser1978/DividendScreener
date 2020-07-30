@@ -29,7 +29,7 @@ public class DivsCoreData {
     public static void SetUp() throws Exception {
         logger.log(Level.INFO,"считываем параметры проекта из properties файлов...");
         //определяем индивидуальные параметры
-        String propsFilePath = System.getenv("RmanpoQA_personal_settings");
+        String propsFilePath = System.getenv("TEMP") + "\\dividendScreener.properties";
         String paramsFile = FileUtils.readFileToString(new File(propsFilePath), "UTF-8");
         props = new Props(paramsFile);
         Configuration.reportsFolder = props.screenshotsFolder();
@@ -86,7 +86,7 @@ public class DivsCoreData {
     }
 
     public static void downloadDivsFile() throws IOException, InterruptedException {
-        open("https://www.dripinvesting.org/Tools/Tools.asp");
+        open(props.dripinvestingURL());
         Thread.sleep(3000);
         Actions action = new Actions(driver);
         action.sendKeys(Keys.PAGE_DOWN).build().perform();
