@@ -18,33 +18,44 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import static Common.DivsCoreData.props;
 import static com.codeborne.selenide.Selenide.download;
 
 public class Base {
     private static Logger logger = Logger.getLogger(Base.class.getSimpleName());
     ArrayList<String> companies = new ArrayList<String>();
     ArrayList<String> tickers = new ArrayList<String>();
+    public String filteringMode;
 
     @Test
     public void run() throws Exception {
         DivsCoreData.SetUp();
         RapidAPIData rapidAPIData = new RapidAPIData();
-        rapidAPIData.tickers.add("AMP");
-        rapidAPIData.tickers.add("BBY");
-        rapidAPIData.tickers.add("CBU");
-        rapidAPIData.tickers.add("GD");
-        rapidAPIData.tickers.add("KMB");
-        rapidAPIData.tickers.add("LMT");
-//        rapidAPIData.tickers.add("LNT");
-        rapidAPIData.tickers.add("MXIM");
-        rapidAPIData.tickers.add("OZK");
-        rapidAPIData.tickers.add("SRE");
-        rapidAPIData.tickers.add("THG");
-        rapidAPIData.tickers.add("TROW");
-        rapidAPIData.tickers.add("TRV");
-//        rapidAPIData.tickers.add("VZ");
+//        rapidAPIData.tickers.add("AMP");
+//        rapidAPIData.tickers.add("BBY");
+//        rapidAPIData.tickers.add("CBU");
+//        rapidAPIData.tickers.add("GD");
+//        rapidAPIData.tickers.add("KMB");
+//        rapidAPIData.tickers.add("LMT");
+        rapidAPIData.tickers.add("LNT");
+//        rapidAPIData.tickers.add("MXIM");
+//        rapidAPIData.tickers.add("OZK");
+//        rapidAPIData.tickers.add("SRE");
+//        rapidAPIData.tickers.add("THG");
+//        rapidAPIData.tickers.add("TROW");
+//        rapidAPIData.tickers.add("TRV");
+        rapidAPIData.tickers.add("VZ");
         tickers = rapidAPIData.checkIncomeGrowth();
         logger.log(Level.INFO,"отработало");
+    }
+
+    public void singleTickerAnalysis(){
+
+    }
+
+    public void bulkAnalysis(){
+
     }
 
     @Test
@@ -71,7 +82,6 @@ public class Base {
         logger.log(Level.INFO, "считываем данные по компаниям...");
         XSSFSheet companiesSheet = divsExcelData.getDivsSheet(newFileName);
         logger.log(Level.INFO, "находим поля, по которым будет проводиться отбор компаний...");
-        CellAddress cellAddress = divsExcelData.findCellAddress(companiesSheet,"Yrs");
         //считываем порядковые номера полей для последующей фильтрации данных
         Cell numberOfYears = divsExcelData.findCell(companiesSheet,"Yrs");
         Cell yieldValue = divsExcelData.findCell(companiesSheet,"Yield");
@@ -88,29 +98,25 @@ public class Base {
         logger.log(Level.INFO, "параметр Yrs - выбираем компании, которые платят дивиденды 15 и более лет...");
         divsExcelData.setAutoFilter(companiesSheet,numberOfYears.getColumnIndex(),"15");
         logger.log(Level.INFO, "параметр Div.Yield - дивиденды от 2.5% годовых...");
-        companies = divsExcelData.filterCompanies(yieldValue.getColumnIndex(),"2.50");
+        divsExcelData.filterCompanies(yieldValue.getColumnIndex(),"2.50");
         logger.log(Level.INFO, "параметр Payouts/Year - частота выплаты дивидендов - не реже 4 раз в год...");
-        companies = divsExcelData.filterCompanies(payoutsValue.getColumnIndex(),"4");
+        divsExcelData.filterCompanies(payoutsValue.getColumnIndex(),"4");
         logger.log(Level.INFO, "параметр MR%Inc. - ежегодный прирост дивидендов - от 2% в год...");
-        companies = divsExcelData.filterCompanies(mrValue.getColumnIndex(),"2.00");
+        divsExcelData.filterCompanies(mrValue.getColumnIndex(),"2.00");
         logger.log(Level.INFO, "параметр Last Increased on: Ex-Div - дата последнего повышения дивидендов - не позже, чем год назад...");
-        DateFormat dateFormat = new SimpleDateFormat("dd/MM/yyyy");
-        Calendar cal = Calendar.getInstance();
-        cal.add(Calendar.YEAR, -1);
-        Date prevYear = cal.getTime();
-        String lastYear = dateFormat.format(prevYear);
-        companies = divsExcelData.filterCompanies(exDivValue.getColumnIndex(),lastYear);
+        String lastYear = divsExcelData.getPrevYear();
+        divsExcelData.filterCompanies(exDivValue.getColumnIndex(),lastYear);
         divsExcelData.comparisonType = "LESSER_THAN";
         logger.log(Level.INFO, "параметр EPS%Payout - доля прибыли, направляемая на выплату дивидендов - не более 70%...");
-        companies = divsExcelData.filterCompanies(EPSValue.getColumnIndex(),"70.00");
+        divsExcelData.filterCompanies(EPSValue.getColumnIndex(),"70.00");
 
         divsExcelData.comparisonType = "GREATER_THAN_OR_EQUALS";
         logger.log(Level.INFO, "параметр MktCap($Mil) - выбираем компании с капитализацией свыше 2млрд.долл...");
-        companies = divsExcelData.filterCompanies(MktCapValue.getColumnIndex(),"2000.00");
+        divsExcelData.filterCompanies(MktCapValue.getColumnIndex(),"2000.00");
 
         divsExcelData.comparisonType = "LESSER_THAN";
         logger.log(Level.INFO, "параметр TTM P/E - срок окупаемости инвестиций в акции компании в годах - для американского рынка не должен превышать 21");
-        companies = divsExcelData.filterCompanies(EPSValue.getColumnIndex()+1,"21.00");
+        divsExcelData.filterCompanies(EPSValue.getColumnIndex()+1,"21.00");
 
         //считываем тикеры компаний
         RapidAPIData rapidAPIData = new RapidAPIData();
@@ -129,4 +135,5 @@ public class Base {
 //        File resultFileName = new File(resultName + ".xlsx");
 //        divsExcelData.saveFilteredResults(companiesBook,resultFileName);
     }
+
 }

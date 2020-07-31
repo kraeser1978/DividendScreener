@@ -19,6 +19,7 @@ import static Common.DivsCoreData.props;
 public class RapidAPIData {
     private static Logger logger = Logger.getLogger(RapidAPIData.class.getSimpleName());
     public ArrayList<String> tickers = new ArrayList<String>();
+    public ArrayList<String> tickersPreviousSelection = new ArrayList<String>();
     final String API_URL = props.APIURL();final String rapidHost = props.rapidHost();final String rapidHostValue = props.rapidHostValue();
     final String rapidKey = props.rapidKey();final String rapidKeyValue = props.rapidKeyValue();
 
@@ -38,7 +39,7 @@ public class RapidAPIData {
         return flag;
     }
 
-    public ArrayList<String> checkIncomeGrowth() throws UnirestException, IOException {
+    public ArrayList<String> checkIncomeGrowth() {
         //метод проверяет актив на наличие поступательного роста показателей Net Income и Operating Income за 4 последних года
         //если значение показателя сокращалось внутри 4х летнего интервала , то компания исключается из выборки
         ArrayList<String> tickersFiltered = new ArrayList<String>();
@@ -46,6 +47,7 @@ public class RapidAPIData {
         for (int i = 0; i < tickers.size(); i++){
             logger.log(Level.INFO, "считываем показатели Net Income и Operating Income по " + tickers.get(i) + " за 4 последних года...");
             JSONArray incomeStatementHistory = getStockIncomeStatementData(tickers.get(i));
+            if (incomeStatementHistory == null) continue;
             ArrayList<Double> netIncVals = getNetIncomeValues(incomeStatementHistory);
             ArrayList<Double> opIncVals = getOperatingIncomeValues(incomeStatementHistory);
             logger.log(Level.INFO, "выполняем проверку на то, что показатели Net Income и Operating Income за выбранный период поступательно росли...");
@@ -87,14 +89,22 @@ public class RapidAPIData {
         return operatingIncome;
     }
 
-    public JSONArray getStockIncomeStatementData(String ticker) throws UnirestException {
-        HttpResponse<JsonNode> response = Unirest.get(API_URL + "/stock/v2/get-financials?symbol=" + ticker)
-                .header(rapidHost, rapidHostValue)
-                .header(rapidKey, rapidKeyValue)
-                .asJson();
-        logger.log(Level.INFO, "запрос отработал");
-        JSONObject jsonObject = response.getBody().getObject().getJSONObject("incomeStatementHistory");
-        JSONArray incomeStatementHistory = jsonObject.getJSONArray("incomeStatementHistory");
+    public JSONArray getStockIncomeStatementData(String ticker) {
+        HttpResponse<JsonNode> response = null;
+        try {
+            response = Unirest.get(API_URL + "/stock/v2/get-financials?symbol=" + ticker)
+                        .header(rapidHost, rapidHostValue)
+                        .header(rapidKey, rapidKeyValue)
+                        .asJson();
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+        }
+        JSONArray incomeStatementHistory;
+        if (response.getBody() != null) {
+            logger.log(Level.INFO, "запрос успешно отработал");
+            JSONObject jsonObject = response.getBody().getObject().getJSONObject("incomeStatementHistory");
+            incomeStatementHistory = jsonObject.getJSONArray("incomeStatementHistory");
+        } else incomeStatementHistory = null;
         return incomeStatementHistory;
     }
 
@@ -106,7 +116,7 @@ public class RapidAPIData {
         return epochStr;
     }
 
-    public ArrayList<String> checkDividendsGrowth() throws UnirestException, IOException {
+    public ArrayList<String> checkDividendsGrowth() {
         //метод проверяет актив на наличие поступательного роста его дивидендов в течение 10 прошедших лет
         //если компания на каком-либо участке исторических данных снижала выплаты по дивидендам, она исключается из выборки
         String startDate = getDateAsEpoch(Calendar.YEAR,-10);
@@ -116,6 +126,7 @@ public class RapidAPIData {
         for (int i = 0; i < tickers.size(); i++){
             logger.log(Level.INFO, "считываем дивиденды по " + tickers.get(i) + " за последние 10 лет...");
             ArrayList<Double> dividends = getDividendHistoryData(startDate,endDate,tickers.get(i));
+            if (dividends == null) continue;
             logger.log(Level.INFO, "выполняем проверку на то, что дивиденды за выбранный период поступательно росли...");
             flag = compareCompanyQuotes(dividends);
             if (flag) {
@@ -130,7 +141,7 @@ public class RapidAPIData {
         return tickers;
     }
 
-    public ArrayList<String> compareStockAgainstEthalonETF() throws IOException, UnirestException {
+    public ArrayList<String> compareStockAgainstEthalonETF() {
         //метод сравнивает прирост стоимости акции компании с приростом стоимости эталонного ETF SDY за прошедшие 10 лет
         //если актив вырос меньше SDY, компания исключается из выборки
         ArrayList<String> tickersFiltered = new ArrayList<String>();
@@ -138,6 +149,7 @@ public class RapidAPIData {
         for (int i = 0; i < tickers.size(); i++){
             logger.log(Level.INFO, "считываем котировки " + tickers.get(i) + " за последние 10 лет...");
             JSONObject chartsData = getPriceChartData(tickers.get(i));
+            if (chartsData == null) continue;
             JSONArray assetQuotes = getStockQuotes(chartsData);
             logger.log(Level.INFO, "рассчитываем рост стоимости " + tickers.get(i) + " за период...");
             double assetValue = getPriceIncrease(assetQuotes);
@@ -160,21 +172,28 @@ public class RapidAPIData {
         return tickers;
     }
 
-    public ArrayList<Double> getDividendHistoryData(String startDate, String endDate, String ticker) throws UnirestException, IOException {
-        HttpResponse<JsonNode> response = Unirest.get(API_URL + "/stock/v2/get-historical-data?frequency=1wk&filter=div" +
-                "&period1=" + startDate + "&period2=" + endDate + "&symbol=" + ticker)
-                .header(rapidHost, rapidHostValue)
-                .header(rapidKey, rapidKeyValue)
-                .asJson();
-        logger.log(Level.INFO, "запрос отработал");
-        JSONArray eventsDataArray = response.getBody().getObject().getJSONArray("eventsData");
-        JSONObject jObject;
-        ArrayList<Double> dividends = new ArrayList<>();
-        for (int i=0; i < eventsDataArray.length();i++){
-            jObject = eventsDataArray.getJSONObject(i);
-            double divValue = jObject.optDouble("amount");
-            dividends.add(divValue);
+    public ArrayList<Double> getDividendHistoryData(String startDate, String endDate, String ticker) {
+        HttpResponse<JsonNode> response = null;
+        try {
+            response = Unirest.get(API_URL + "/stock/v2/get-historical-data?frequency=1wk&filter=div" +
+                    "&period1=" + startDate + "&period2=" + endDate + "&symbol=" + ticker)
+                    .header(rapidHost, rapidHostValue)
+                    .header(rapidKey, rapidKeyValue)
+                    .asJson();
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
         }
+        ArrayList<Double> dividends = new ArrayList<>();
+        if (response.getBody() != null) {
+            logger.log(Level.INFO, "запрос успешно отработал");
+            JSONArray eventsDataArray = response.getBody().getObject().getJSONArray("eventsData");
+            JSONObject jObject;
+            for (int i=0; i < eventsDataArray.length();i++){
+                jObject = eventsDataArray.getJSONObject(i);
+                double divValue = jObject.optDouble("amount");
+                dividends.add(divValue);
+            }
+        } else dividends = null;
         return dividends;
     }
 
@@ -205,16 +224,35 @@ public class RapidAPIData {
         return increase;
     }
 
-    public JSONObject getPriceChartData(String ticker) throws UnirestException, IOException {
-        HttpResponse<JsonNode> response = Unirest.get(API_URL + "/market/get-charts" +
-                "?comparisons=SDY&region=US&lang=en&symbol=" + ticker + "&interval=1wk&range=10y")
-                .header(rapidHost, rapidHostValue)
-                .header(rapidKey, rapidKeyValue)
-                .asJson();
-        logger.log(Level.INFO, "запрос отработал");
-        JSONObject chart = response.getBody().getObject().getJSONObject("chart");
-        JSONArray result = chart.getJSONArray("result");
-        JSONObject jObject = result.getJSONObject(0);
+    public JSONObject getPriceChartData(String ticker) {
+        HttpResponse<JsonNode> response = null;
+        try {
+            response = Unirest.get(API_URL + "/market/get-charts" +
+                    "?comparisons=SDY&region=US&lang=en&symbol=" + ticker + "&interval=1wk&range=10y")
+                    .header(rapidHost, rapidHostValue)
+                    .header(rapidKey, rapidKeyValue)
+                    .asJson();
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+        }
+        JSONObject jObject;
+        if (response.getBody() != null) {
+            logger.log(Level.INFO, "запрос успешно отработал");
+            JSONObject chart = response.getBody().getObject().getJSONObject("chart");
+            JSONArray result = chart.getJSONArray("result");
+            jObject = result.getJSONObject(0);
+        } else jObject = null;
         return jObject;
+    }
+
+    public void copyFilteredTickers(ArrayList<String> companyNamesFiltered){
+        ///очищаем массив предыдущей выборки
+        tickersPreviousSelection.clear();
+        //копируем в массив предыдущей выборки текущую выборку - список компаний до запуска текущей сессии фильтрации
+        tickersPreviousSelection = (ArrayList<String>)tickers.clone();
+        //очищаем основной массив
+        tickers.clear();
+        //копируем значения из новой выборки в основной - список отобранных компаний в текущей сессии фильтрации
+        tickers = (ArrayList<String>)companyNamesFiltered.clone();
     }
 }

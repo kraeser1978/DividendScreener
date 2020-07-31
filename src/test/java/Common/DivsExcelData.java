@@ -15,6 +15,7 @@ import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.logging.Level;
@@ -23,11 +24,13 @@ import java.util.logging.Logger;
 public class DivsExcelData {
     private static Logger logger = Logger.getLogger(DivsExcelData.class.getSimpleName());
     public ArrayList<String> companyNames = new ArrayList<String>();
-    public XSSFWorkbook companiesBook;
-    public String comparisonType;
+    public ArrayList<String> companyNamesPreviousSelection = new ArrayList<String>();
+    public XSSFWorkbook companiesBook; public String comparisonType;
 
-    public ArrayList<String> filterCompanies(int Column, String searchCriteria) throws ParseException {
+    public void filterCompanies(int Column, String searchCriteria) throws ParseException {
         ArrayList<String> companyNamesFiltered = new ArrayList<String>();
+        boolean isToContinue = DivsCoreData.shouldAnalysisContinue(companyNamesPreviousSelection,companyNames);
+        if (!isToContinue) return;
         XSSFRow row = null; double expectedValue = 0,currentValue = 0; Date currentDate,expectedDate;
         XSSFSheet sheet = companiesBook.getSheet("All CCC");
         //для каждой компании из списка выбираем только те, которые соответствуют критерию
@@ -65,11 +68,23 @@ public class DivsExcelData {
                 }
             }
         }
-        //очищаем исходный массив
+        //очищаем массив предыдущей выборки
+        companyNamesPreviousSelection.clear();
+        //копируем в массив предыдущей выборки текущую выборку - список компаний до запуска текущей сессии фильтрации
+        companyNamesPreviousSelection = (ArrayList<String>)companyNames.clone();
+        //очищаем основной массив
         companyNames.clear();
-        //копируем значения из отфильтрованного массива в исходный
+        //копируем значения из новой выборки в основной - список отобранных компаний в текущей сессии фильтрации
         companyNames = (ArrayList<String>)companyNamesFiltered.clone();
-        return companyNames;
+    }
+
+    public String getPrevYear(){
+        DateFormat dateFormat = new SimpleDateFormat("dd/MM/yyyy");
+        Calendar cal = Calendar.getInstance();
+        cal.add(Calendar.YEAR, -1);
+        Date prevYear = cal.getTime();
+        String lastYear = dateFormat.format(prevYear);
+        return lastYear;
     }
 
     public ArrayList<String> getCompaniesTickersByNames(XSSFSheet sheet){

@@ -26,6 +26,18 @@ public class DivsCoreData {
     public static Set<String> locatorCodes;
     public static Props props;
 
+    public static boolean shouldAnalysisContinue(ArrayList<String> previousSelection, ArrayList<String> currentSelection){
+        boolean flag = true;
+        //продолжаем, если текущая выборка еще не заполнена
+        if (currentSelection.size() == 0) return true;
+        //считываем параметр со значением ожидаемого количества компаний для финального отбора
+        int expectedNumOfStocksToSelect = Integer.parseInt(props.expectedNumberOfStocks());
+        //если ожидаемое кол-во отобранных компаний находится между размером предыдущей и текущей выборок - останавливаемся и прекращаем дальнейший отбор
+        if (previousSelection.size() >= expectedNumOfStocksToSelect && currentSelection.size() < expectedNumOfStocksToSelect) flag = false;
+        if (previousSelection.size() > expectedNumOfStocksToSelect && currentSelection.size() <= expectedNumOfStocksToSelect) flag = false;
+        return flag;
+    }
+
     public static void SetUp() throws Exception {
         logger.log(Level.INFO,"считываем параметры проекта из properties файлов...");
         //определяем индивидуальные параметры
