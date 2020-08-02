@@ -2,60 +2,52 @@ import Common.DivsCoreData;
 import Common.DivsExcelData;
 import Common.RapidAPIData;
 import com.codeborne.selenide.Configuration;
-import org.apache.commons.io.FileUtils;
 import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.util.CellAddress;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.json.JSONArray;
 import org.junit.Test;
 import java.io.File;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Date;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static Common.DivsCoreData.props;
+import static Common.DivsExcelData.findCell;
 import static com.codeborne.selenide.Selenide.download;
 
 public class Base {
     private static Logger logger = Logger.getLogger(Base.class.getSimpleName());
-    ArrayList<String> companies = new ArrayList<String>();
-    ArrayList<String> tickers = new ArrayList<String>();
     public String filteringMode;
 
     @Test
     public void run() throws Exception {
         DivsCoreData.SetUp();
         RapidAPIData rapidAPIData = new RapidAPIData();
-//        rapidAPIData.tickers.add("AMP");
-//        rapidAPIData.tickers.add("BBY");
-//        rapidAPIData.tickers.add("CBU");
-//        rapidAPIData.tickers.add("GD");
-//        rapidAPIData.tickers.add("KMB");
-//        rapidAPIData.tickers.add("LMT");
-        rapidAPIData.tickers.add("LNT");
-//        rapidAPIData.tickers.add("MXIM");
-//        rapidAPIData.tickers.add("OZK");
-//        rapidAPIData.tickers.add("SRE");
-//        rapidAPIData.tickers.add("THG");
-//        rapidAPIData.tickers.add("TROW");
-//        rapidAPIData.tickers.add("TRV");
+        rapidAPIData.tickers.add("AMP");
+        rapidAPIData.tickers.add("BBY");
+        rapidAPIData.tickers.add("GD");
+        rapidAPIData.tickers.add("KMB");
+        rapidAPIData.tickers.add("LMT");
+        rapidAPIData.tickers.add("MXIM");
+        rapidAPIData.tickers.add("NWE");
+        rapidAPIData.tickers.add("OZK");
+        rapidAPIData.tickers.add("TRV");
         rapidAPIData.tickers.add("VZ");
-        tickers = rapidAPIData.checkIncomeGrowth();
+        rapidAPIData.tickersPreviousSelection.add("AMP");
+        rapidAPIData.tickersPreviousSelection.add("BBY");
+        rapidAPIData.tickersPreviousSelection.add("CBU");
+        rapidAPIData.tickersPreviousSelection.add("GD");
+        rapidAPIData.tickersPreviousSelection.add("KMB");
+        rapidAPIData.tickersPreviousSelection.add("LMT");
+        rapidAPIData.tickersPreviousSelection.add("LNT");
+        rapidAPIData.tickersPreviousSelection.add("MXIM");
+        rapidAPIData.tickersPreviousSelection.add("NWE");
+        rapidAPIData.tickersPreviousSelection.add("OZK");
+        rapidAPIData.tickersPreviousSelection.add("SRE");
+        rapidAPIData.tickersPreviousSelection.add("THG");
+        rapidAPIData.tickersPreviousSelection.add("TROW");
+        rapidAPIData.tickersPreviousSelection.add("TRV");
+        rapidAPIData.tickersPreviousSelection.add("VZ");
+        rapidAPIData.checkIncomeGrowth();
         logger.log(Level.INFO,"отработало");
-    }
-
-    public void singleTickerAnalysis(){
-
-    }
-
-    public void bulkAnalysis(){
-
     }
 
     @Test
@@ -79,58 +71,38 @@ public class Base {
         File newFileName = new File(newName + ".xlsx");
 //        divsExcelData.removeSheets(downloadedXlsFile,newFileName);
         DivsExcelData divsExcelData = new DivsExcelData();
-        logger.log(Level.INFO, "считываем данные по компаниям...");
-        XSSFSheet companiesSheet = divsExcelData.getDivsSheet(newFileName);
-        logger.log(Level.INFO, "находим поля, по которым будет проводиться отбор компаний...");
-        //считываем порядковые номера полей для последующей фильтрации данных
-        Cell numberOfYears = divsExcelData.findCell(companiesSheet,"Yrs");
-        Cell yieldValue = divsExcelData.findCell(companiesSheet,"Yield");
-        Cell payoutsValue = divsExcelData.findCell(companiesSheet,"Payouts/");
-        Cell mrValue = divsExcelData.findCell(companiesSheet,"Inc.");
-        Cell exDivValue = divsExcelData.findCell(companiesSheet,"Ex-Div");
-        Cell EPSValue = divsExcelData.findCell(companiesSheet,"EPS%");
-        Cell MktCapValue = divsExcelData.findCell(companiesSheet,"MktCap");
-
-        logger.log(Level.INFO, "загружаем список компаний из файла...");
+        logger.log(Level.INFO, "загружаем данные из файла...");
         divsExcelData.getDivsBook(newFileName);
-        divsExcelData.comparisonType = "GREATER_THAN_OR_EQUALS";
-        logger.log(Level.INFO, "выполняем предварительный отбор по следующим фильтрам:");
+        logger.log(Level.INFO, "задаем критерии поиска и фильтрации...");
+        XSSFSheet companiesSheet = divsExcelData.getDivsSheet(newFileName);
+        divsExcelData.getSearchCriteria(companiesSheet);
         logger.log(Level.INFO, "параметр Yrs - выбираем компании, которые платят дивиденды 15 и более лет...");
+        Cell numberOfYears = divsExcelData.findCell(companiesSheet,"Yrs");
         divsExcelData.setAutoFilter(companiesSheet,numberOfYears.getColumnIndex(),"15");
-        logger.log(Level.INFO, "параметр Div.Yield - дивиденды от 2.5% годовых...");
-        divsExcelData.filterCompanies(yieldValue.getColumnIndex(),"2.50");
-        logger.log(Level.INFO, "параметр Payouts/Year - частота выплаты дивидендов - не реже 4 раз в год...");
-        divsExcelData.filterCompanies(payoutsValue.getColumnIndex(),"4");
-        logger.log(Level.INFO, "параметр MR%Inc. - ежегодный прирост дивидендов - от 2% в год...");
-        divsExcelData.filterCompanies(mrValue.getColumnIndex(),"2.00");
-        logger.log(Level.INFO, "параметр Last Increased on: Ex-Div - дата последнего повышения дивидендов - не позже, чем год назад...");
-        String lastYear = divsExcelData.getPrevYear();
-        divsExcelData.filterCompanies(exDivValue.getColumnIndex(),lastYear);
-        divsExcelData.comparisonType = "LESSER_THAN";
-        logger.log(Level.INFO, "параметр EPS%Payout - доля прибыли, направляемая на выплату дивидендов - не более 70%...");
-        divsExcelData.filterCompanies(EPSValue.getColumnIndex(),"70.00");
-
-        divsExcelData.comparisonType = "GREATER_THAN_OR_EQUALS";
-        logger.log(Level.INFO, "параметр MktCap($Mil) - выбираем компании с капитализацией свыше 2млрд.долл...");
-        divsExcelData.filterCompanies(MktCapValue.getColumnIndex(),"2000.00");
-
-        divsExcelData.comparisonType = "LESSER_THAN";
-        logger.log(Level.INFO, "параметр TTM P/E - срок окупаемости инвестиций в акции компании в годах - для американского рынка не должен превышать 21");
-        divsExcelData.filterCompanies(EPSValue.getColumnIndex()+1,"21.00");
-
+        logger.log(Level.INFO, "выполняем предварительный отбор по следующим фильтрам:");
+        for (Map.Entry<String, ArrayList<String>> entry : divsExcelData.fieldsSearchCriterias.entrySet()) {
+            String key = entry.getKey();
+            ArrayList<String> criterias = entry.getValue();
+            int columnSeqNo = divsExcelData.fieldsColumns.get(key);
+            divsExcelData.comparisonType = criterias.get(2);
+            divsExcelData.filterCompanies(columnSeqNo,criterias.get(0),criterias.get(1));
+        }
         //считываем тикеры компаний
         RapidAPIData rapidAPIData = new RapidAPIData();
         //передаем массив тикеров в класс для выполнения REST запросов к market data source
-        rapidAPIData.tickers = divsExcelData.getCompaniesTickersByNames(companiesSheet);
-        logger.log(Level.INFO, "сравниваем прирост стоимости акций компаний с приростом стоимости эталонного ETF SDY за прошедшие 10 лет...");
-        logger.log(Level.INFO, "если актив вырос меньше SDY, компания исключается из выборки");
-        tickers = rapidAPIData.compareStockAgainstEthalonETF();
-
-        logger.log(Level.INFO, "метод проверяет актив на наличие поступательного роста его дивидендов в течение 10 прошедших лет");
-        logger.log(Level.INFO, "если компания на каком-либо участке исторических данных снижала выплаты по дивидендам, она исключается из выборки");
-        tickers = rapidAPIData.checkDividendsGrowth();
-
-        logger.log(Level.INFO, "сохраняем результаты фильтров в файле...");
+        rapidAPIData.tickers = divsExcelData.getCompaniesTickersByNames(companiesSheet,divsExcelData.companyNames);
+        rapidAPIData.tickersPreviousSelection = divsExcelData.getCompaniesTickersByNames(companiesSheet,divsExcelData.companyNamesPreviousSelection);
+        //метод сравнивает прирост стоимости акции компании с приростом стоимости эталонного ETF SDY за прошедшие 10 лет
+        //если актив вырос меньше SDY, компания исключается из выборки
+        rapidAPIData.compareStockAgainstEthalonETF();
+        //метод проверяет актив на наличие поступательного роста его дивидендов в течение 10 прошедших лет
+        //если компания на каком-либо участке исторических данных снижала выплаты по дивидендам, она исключается из выборки
+        rapidAPIData.checkDividendsGrowth();
+        //метод проверяет актив на наличие поступательного роста показателей Net Income и Operating Income за 4 последних года
+        //если значение показателя сокращалось внутри 4х летнего интервала , то компания исключается из выборки
+        rapidAPIData.checkIncomeGrowth();
+        logger.log(Level.INFO, "итоговый результат отбора компаний:");
+        logger.log(Level.INFO,rapidAPIData.tickers.toString());
 //        String resultName = Configuration.reportsFolder + "\\USDividendChampions_filtered";
 //        File resultFileName = new File(resultName + ".xlsx");
 //        divsExcelData.saveFilteredResults(companiesBook,resultFileName);

@@ -39,10 +39,12 @@ public class RapidAPIData {
         return flag;
     }
 
-    public ArrayList<String> checkIncomeGrowth() {
-        //метод проверяет актив на наличие поступательного роста показателей Net Income и Operating Income за 4 последних года
-        //если значение показателя сокращалось внутри 4х летнего интервала , то компания исключается из выборки
+    public void checkIncomeGrowth() {
         ArrayList<String> tickersFiltered = new ArrayList<String>();
+        boolean isToContinue = DivsCoreData.shouldAnalysisContinue(tickersPreviousSelection,tickers);
+        if (!isToContinue) return;
+        logger.log(Level.INFO, "метод проверяет актив на наличие поступательного роста показателей Net Income и Operating Income за 4 последних года");
+        logger.log(Level.INFO, "если значение показателя сокращалось внутри 4х летнего интервала , то компания исключается из выборки");
         boolean flag = false;
         for (int i = 0; i < tickers.size(); i++){
             logger.log(Level.INFO, "считываем показатели Net Income и Operating Income по " + tickers.get(i) + " за 4 последних года...");
@@ -58,11 +60,7 @@ public class RapidAPIData {
                 tickersFiltered.add(tickers.get(i));
             } else logger.log(Level.INFO, "Net Income или Operating Income компании " + tickers.get(i) + " в течение выбранного периода некоторое время снижались - исключаем ее из выборки");
         }
-        //очищаем исходный массив
-        tickers.clear();
-        //копируем значения из отфильтрованного массива в исходный
-        tickers = (ArrayList<String>)tickersFiltered.clone();
-        return tickers;
+        copyFilteredTickers(tickersFiltered);
     }
 
     public ArrayList<Double> getNetIncomeValues(JSONArray incomeStatementHistory){
@@ -116,9 +114,11 @@ public class RapidAPIData {
         return epochStr;
     }
 
-    public ArrayList<String> checkDividendsGrowth() {
-        //метод проверяет актив на наличие поступательного роста его дивидендов в течение 10 прошедших лет
-        //если компания на каком-либо участке исторических данных снижала выплаты по дивидендам, она исключается из выборки
+    public void checkDividendsGrowth() {
+        boolean isToContinue = DivsCoreData.shouldAnalysisContinue(tickersPreviousSelection,tickers);
+        if (!isToContinue) return;
+        logger.log(Level.INFO, "метод проверяет актив на наличие поступательного роста его дивидендов в течение 10 прошедших лет");
+        logger.log(Level.INFO, "если компания на каком-либо участке исторических данных снижала выплаты по дивидендам, она исключается из выборки");
         String startDate = getDateAsEpoch(Calendar.YEAR,-10);
         String endDate = getDateAsEpoch(Calendar.YEAR,0);
         ArrayList<String> tickersFiltered = new ArrayList<String>();
@@ -134,17 +134,15 @@ public class RapidAPIData {
                 tickersFiltered.add(tickers.get(i));
             } else logger.log(Level.INFO, "размер дивиденда компании " + tickers.get(i) + " в течение выбранного периода некоторое время снижался - исключаем ее из выборки");
         }
-        //очищаем исходный массив
-        tickers.clear();
-        //копируем значения из отфильтрованного массива в исходный
-        tickers = (ArrayList<String>)tickersFiltered.clone();
-        return tickers;
+        copyFilteredTickers(tickersFiltered);
     }
 
-    public ArrayList<String> compareStockAgainstEthalonETF() {
-        //метод сравнивает прирост стоимости акции компании с приростом стоимости эталонного ETF SDY за прошедшие 10 лет
-        //если актив вырос меньше SDY, компания исключается из выборки
+    public void compareStockAgainstEthalonETF() {
         ArrayList<String> tickersFiltered = new ArrayList<String>();
+        boolean isToContinue = DivsCoreData.shouldAnalysisContinue(tickersPreviousSelection,tickers);
+        if (!isToContinue) return;
+        logger.log(Level.INFO, "сравниваем прирост стоимости акций компаний с приростом стоимости эталонного ETF SDY за прошедшие 10 лет...");
+        logger.log(Level.INFO, "если актив вырос меньше SDY, компания исключается из выборки");
         double ethalonValue = 0;
         for (int i = 0; i < tickers.size(); i++){
             logger.log(Level.INFO, "считываем котировки " + tickers.get(i) + " за последние 10 лет...");
@@ -165,11 +163,7 @@ public class RapidAPIData {
                 tickersFiltered.add(tickers.get(i));
             } else logger.log(Level.INFO, tickers.get(i) + " вырос слабее эталона - исклкючаем его из выборки");
         }
-        //очищаем исходный массив
-        tickers.clear();
-        //копируем значения из отфильтрованного массива в исходный
-        tickers = (ArrayList<String>)tickersFiltered.clone();
-        return tickers;
+        copyFilteredTickers(tickersFiltered);
     }
 
     public ArrayList<Double> getDividendHistoryData(String startDate, String endDate, String ticker) {

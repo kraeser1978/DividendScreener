@@ -14,10 +14,7 @@ import java.io.*;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.Iterator;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -26,11 +23,14 @@ public class DivsExcelData {
     public ArrayList<String> companyNames = new ArrayList<String>();
     public ArrayList<String> companyNamesPreviousSelection = new ArrayList<String>();
     public XSSFWorkbook companiesBook; public String comparisonType;
+    public final HashMap<String,ArrayList<String>> fieldsSearchCriterias = new LinkedHashMap<>();
+    public HashMap<String,Integer> fieldsColumns = new HashMap<>();
 
-    public void filterCompanies(int Column, String searchCriteria) throws ParseException {
+    public void filterCompanies(int Column, String searchCriteria,String criteriaDescription) throws ParseException {
         ArrayList<String> companyNamesFiltered = new ArrayList<String>();
         boolean isToContinue = DivsCoreData.shouldAnalysisContinue(companyNamesPreviousSelection,companyNames);
         if (!isToContinue) return;
+        logger.log(Level.INFO,criteriaDescription);
         XSSFRow row = null; double expectedValue = 0,currentValue = 0; Date currentDate,expectedDate;
         XSSFSheet sheet = companiesBook.getSheet("All CCC");
         //для каждой компании из списка выбираем только те, которые соответствуют критерию
@@ -68,6 +68,69 @@ public class DivsExcelData {
                 }
             }
         }
+        copyFilteredCompanies(companyNamesFiltered);
+    }
+
+    public void getSearchCriteria(XSSFSheet sheet){
+//        ArrayList<String> Yrs = new ArrayList<String>();
+        ArrayList<String> Yield = new ArrayList<String>();
+        ArrayList<String> Payouts = new ArrayList<String>();
+        ArrayList<String> mr = new ArrayList<String>();
+        ArrayList<String> exDiv = new ArrayList<String>();
+        ArrayList<String> EPS = new ArrayList<String>();
+        ArrayList<String> MktCap = new ArrayList<String>();
+        ArrayList<String> pe = new ArrayList<String>();
+//        Yrs.add("15");
+//        Yrs.add("параметр Yrs - выбираем компании, которые платят дивиденды 15 и более лет...");
+//        Yrs.add("GREATER_THAN_OR_EQUALS");
+        Yield.add("2.50");
+        Yield.add("параметр Div.Yield - дивиденды от 2.5% годовых...");
+        Yield.add("GREATER_THAN_OR_EQUALS");
+        Payouts.add("4");
+        Payouts.add("параметр Payouts/Year - частота выплаты дивидендов - не реже 4 раз в год...");
+        Payouts.add("GREATER_THAN_OR_EQUALS");
+        mr.add("2.00");
+        mr.add("параметр MR%Inc. - ежегодный прирост дивидендов - от 2% в год...");
+        mr.add("GREATER_THAN_OR_EQUALS");
+        exDiv.add(getPrevYear());
+        exDiv.add("параметр Last Increased on: Ex-Div - дата последнего повышения дивидендов - не позже, чем год назад...");
+        exDiv.add("GREATER_THAN_OR_EQUALS");
+        EPS.add("70.00");
+        EPS.add("параметр EPS%Payout - доля прибыли, направляемая на выплату дивидендов - не более 70%...");
+        EPS.add("LESSER_THAN");
+        MktCap.add("2000.00");
+        MktCap.add("параметр MktCap($Mil) - выбираем компании с капитализацией свыше 2млрд.долл...");
+        MktCap.add("GREATER_THAN_OR_EQUALS");
+        pe.add("21.00");
+        pe.add("параметр TTM P/E - срок окупаемости инвестиций в акции компании в годах - для американского рынка не должен превышать 21");
+        pe.add("LESSER_THAN");
+        //заполняем хешмеп данными по критериям поиска по полям
+//        fieldsSearchCriterias.put("Yrs",Yrs);
+        fieldsSearchCriterias.put("Yield",Yield);
+        fieldsSearchCriterias.put("Year",Payouts);
+        fieldsSearchCriterias.put("Inc.",mr);
+        fieldsSearchCriterias.put("Ex-Div",exDiv);
+        fieldsSearchCriterias.put("Payout",EPS);
+        fieldsSearchCriterias.put("($Mil)",MktCap);
+        fieldsSearchCriterias.put("P/E",pe);
+        //ищем строку с шапкой таблицы - названием полей
+        logger.log(Level.INFO, "находим поля, по которым будет проводиться отбор компаний...");
+        Cell numberOfYears = findCell(sheet,"Yrs");
+        XSSFRow row = (XSSFRow) numberOfYears.getRow();
+        for(Cell cell : row) {
+            //записываем названия всех полей в массив
+            CellType cellType = cell.getCellType();
+            if(cellType.name() == "STRING") {
+                String fieldName = cell.getStringCellValue();
+                //если имя найденного поля входит в список полей для отбора, сохраняем его порядковый номер в отдельный хешмап
+                if (fieldsSearchCriterias.keySet().contains(fieldName))
+                    fieldsColumns.put(fieldName,cell.getColumnIndex());
+            }
+        }
+        logger.log(Level.INFO, "критерии поиска определены по компаниям считаны");
+    }
+
+    public void copyFilteredCompanies(ArrayList<String> companyNamesFiltered){
         //очищаем массив предыдущей выборки
         companyNamesPreviousSelection.clear();
         //копируем в массив предыдущей выборки текущую выборку - список компаний до запуска текущей сессии фильтрации
@@ -87,15 +150,15 @@ public class DivsExcelData {
         return lastYear;
     }
 
-    public ArrayList<String> getCompaniesTickersByNames(XSSFSheet sheet){
+    public ArrayList<String> getCompaniesTickersByNames(XSSFSheet sheet, ArrayList<String> names){
         ArrayList<String> tickers = new ArrayList<String>();
         //определяем порядковый номер поля с тикером
-        Cell ticker = findCell(sheet,"Symbol");
-        int symbolColumn = ticker.getColumnIndex();
+        Cell company = findCell(sheet,"Symbol");
+        int symbolColumn = company.getColumnIndex();
         //для каждой отобранной компании считываем ее тикер
-        for (int i=0; i< companyNames.size(); i++){
+        for (int i=0; i< names.size(); i++){
             //находим ячейку с уникальным именем компании
-            Cell name = findCell(sheet,companyNames.get(i));
+            Cell name = findCell(sheet,names.get(i));
             //считываем всю строку с найденной ячейкой
             XSSFRow row = (XSSFRow) name.getRow();
             //считываем тикер в строке
@@ -104,6 +167,25 @@ public class DivsExcelData {
             tickers.add(cell.getStringCellValue());
         }
         return tickers;
+    }
+
+    public ArrayList<String> getCompaniesNamesByTickers(XSSFSheet sheet, ArrayList<String> tickers){
+        ArrayList<String> names = new ArrayList<String>();
+        //определяем порядковый номер поля с тикером
+        Cell company = findCell(sheet,"Name");
+        int nameColumn = company.getColumnIndex();
+        //для каждой отобранной компании считываем ее тикер
+        for (int i=0; i< tickers.size(); i++){
+            //находим ячейку с уникальным именем компании
+            Cell ticker = findCellInColumn(sheet,nameColumn,tickers.get(i));
+            //считываем всю строку с найденной ячейкой
+            XSSFRow row = (XSSFRow) ticker.getRow();
+            //считываем тикер в строке
+            Cell cell = row.getCell(nameColumn);
+            //добавляем тике в массив
+            names.add(cell.getStringCellValue());
+        }
+        return names;
     }
 
     public static XSSFRow findCompanyRow(XSSFSheet sheet, String companyName) {
@@ -202,6 +284,34 @@ public class DivsExcelData {
             }
         }
         return null;
+    }
+
+    public static Cell findCellInColumn(XSSFSheet sheet, int columnIndex, String text) {
+        for(Row row : sheet) {
+            Cell cell = row.getCell(columnIndex);
+            CellType cellType = cell.getCellType();
+            if(cellType.name() == "STRING") {
+                if(text.equals(cell.getStringCellValue()))
+                    return cell;
+            }
+        }
+        return null;
+    }
+
+    public void getAllCompaniesNames(XSSFSheet sheet){
+        //метод считывает список всех названий компаний из файла Excel
+        Cell name = findCell(sheet,"Name");
+        int nameColumn = name.getColumnIndex();
+        int firstRowToStart = name.getRowIndex()+1;
+        int lastRowToEnd = findCell(sheet,"Averages for All").getRowIndex() - 2;
+        for (int i = firstRowToStart;i < lastRowToEnd;i++) {
+            XSSFRow row = sheet.getRow(i);
+            Cell currentName = row.getCell(nameColumn);
+            CellType cellType = currentName.getCellType();
+            if (cellType.name() == "STRING") {
+                companyNames.add(currentName.getStringCellValue());
+            }
+        }
     }
 
     public void saveCompanyNames(XSSFRow row, int nameColumn ){
