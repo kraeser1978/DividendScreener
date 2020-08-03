@@ -6,8 +6,6 @@ import com.mashape.unirest.http.Unirest;
 import com.mashape.unirest.http.exceptions.UnirestException;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import org.junit.Test;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
@@ -161,7 +159,7 @@ public class RapidAPIData {
             if (assetValue > ethalonValue * 2) {
                 logger.log(Level.INFO, tickers.get(i) + " вырос сильнее эталона - оставляем его в выборке");
                 tickersFiltered.add(tickers.get(i));
-            } else logger.log(Level.INFO, tickers.get(i) + " вырос слабее эталона - исклкючаем его из выборки");
+            } else logger.log(Level.INFO, tickers.get(i) + " вырос слабее эталона - исключаем его из выборки");
         }
         copyFilteredTickers(tickersFiltered);
     }

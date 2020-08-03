@@ -9,13 +9,13 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.interactions.Actions;
 import java.io.File;
 import java.io.IOException;
+import java.net.URLDecoder;
 import java.util.*;
 import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
-import static com.codeborne.selenide.Selenide.$;
-import static com.codeborne.selenide.Selenide.open;
+import static com.codeborne.selenide.Selenide.*;
 import static com.codeborne.selenide.WebDriverRunner.closeWebDriver;
 
 public class DivsCoreData {
@@ -26,6 +26,20 @@ public class DivsCoreData {
     public static Properties locators = new Properties();
     public static Set<String> locatorCodes;
     public static Props props;
+
+    public void reportFinalFilteredLists(ArrayList<String> tickers, HashMap<String,String> namesAndTickers, String selectionText){
+        logger.log(Level.INFO,"");
+        logger.log(Level.INFO,selectionText);
+        logger.log(Level.INFO,"отобрано компаний = " + tickers.size());
+        for (int i = 0; i < tickers.size();i++){
+            String ticketCode = tickers.get(i);
+            if (namesAndTickers.keySet().contains(ticketCode)){
+                //извлекаем полное название компании
+                String companyName = namesAndTickers.get(ticketCode);
+                logger.log(Level.INFO,companyName + " (" + ticketCode + ")");
+            }
+        }
+    }
 
     public static boolean shouldAnalysisContinue(ArrayList<String> previousSelection, ArrayList<String> currentSelection){
         boolean flag = true;
@@ -41,13 +55,20 @@ public class DivsCoreData {
 
     public static void SetUp() throws Exception {
         logger.log(Level.INFO,"считываем параметры проекта из properties файлов...");
+//        String path = Base.class.getProtectionDomain().getCodeSource().getLocation().getPath();
+//        String decodedPath = URLDecoder.decode(path,"UTF-8");
         //определяем индивидуальные параметры
-        String propsFilePath = System.getenv("TEMP") + "\\dividendScreener.properties";
+        File file = new File(DivsCoreData.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath());
+        String currentWorkingDir = file.getParentFile().getPath();
+        String propsFilePath = currentWorkingDir + "\\dividendScreener.properties";
         String paramsFile = FileUtils.readFileToString(new File(propsFilePath), "UTF-8");
         props = new Props(paramsFile);
-        Configuration.reportsFolder = props.screenshotsFolder();
+        //задаем папку для выгрузки файла MS Excel со списком дивидендных компаний и скриншотов с ошибками
+        Configuration.reportsFolder = currentWorkingDir;
         //задаем режим логирования сообщений в лог файл
-        logInit(props.logFilePath());
+        logInit(currentWorkingDir + "\\dividendScreener_1.0.log");
+        logger.log(Level.INFO, "");
+        logger.log(Level.INFO, "");
 //        //считываем локаторы
 //        String locatorsFilePath = System.getenv("RmanpoQA_personal_case_locators");
 //        String locatorsText = FileUtils.readFileToString(new File(locatorsFilePath), "UTF-8");
@@ -98,14 +119,33 @@ public class DivsCoreData {
         log.setLevel(Level.CONFIG);
     }
 
-    public static void downloadDivsFile() throws IOException, InterruptedException {
-        open(props.dripinvestingURL());
-        Thread.sleep(3000);
-        Actions action = new Actions(driver);
-        action.sendKeys(Keys.PAGE_DOWN).build().perform();
-        Thread.sleep(1000);
-        $(By.xpath("//strong[text()='Dividend Champions Excel Spreadsheet']//parent::a"))
-                .shouldBe(Condition.enabled).download();
+    public static void downloadDivsFile() throws IOException {
+        String downloadedName = Configuration.reportsFolder + "\\USDividendChampions";
+        File downloadedXlsFile = new File(downloadedName + ".xlsx");
+        File downloadedFile = new File(downloadedName);
+        logger.log(Level.INFO, "загружаем Excel файл с дивидендами в текущую папку...");
+        download(props.dripinvestingURL(), 10000);
+        logger.log(Level.INFO, "файл скачан");
+        logger.log(Level.INFO,"переименовываем файл, удаляем предыдущую версию, если она существует...");
+        if (downloadedXlsFile.exists()) FileUtils.forceDelete(downloadedXlsFile);
+        FileUtils.moveFile(downloadedFile, downloadedXlsFile);
+        logger.log(Level.INFO, "загрузка завершена");
+        DivsExcelData divsExcelData = new DivsExcelData();
+        String newName = Configuration.reportsFolder + "\\USDividendChampions_singleTab";
+        File newFileName = new File(newName + ".xlsx");
+        //удаляем предыдущую версию, если она существует
+        if (newFileName.exists()) FileUtils.forceDelete(newFileName);
+//        FileUtils.moveFile(downloadedXlsFile, newFileName);
+        logger.log(Level.INFO, "удаляем лишние вкладки в файле...");
+        divsExcelData.removeSheets(downloadedXlsFile,newFileName);
+        logger.log(Level.INFO,"файл готов к работе");
+        //алгоритм интерактивной закачки файла с сайта
+//        open(props.dripinvestingURL());
+//        Thread.sleep(3000);
+//        Actions action = new Actions(driver);
+//        action.sendKeys(Keys.PAGE_DOWN).build().perform();
+//        Thread.sleep(1000);
+//        $(By.xpath("//strong[text()='Dividend Champions Excel Spreadsheet']//parent::a"))
+//                .shouldBe(Condition.enabled).download();
     }
-
 }

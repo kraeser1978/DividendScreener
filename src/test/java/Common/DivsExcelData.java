@@ -9,7 +9,6 @@ import org.apache.poi.xssf.usermodel.XSSFRow;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.openxmlformats.schemas.spreadsheetml.x2006.main.*;
-
 import java.io.*;
 import java.text.DateFormat;
 import java.text.ParseException;
@@ -25,6 +24,7 @@ public class DivsExcelData {
     public XSSFWorkbook companiesBook; public String comparisonType;
     public final HashMap<String,ArrayList<String>> fieldsSearchCriterias = new LinkedHashMap<>();
     public HashMap<String,Integer> fieldsColumns = new HashMap<>();
+    public HashMap<String,String> companyNamesAndTickers = new HashMap<>();
 
     public void filterCompanies(int Column, String searchCriteria,String criteriaDescription) throws ParseException {
         ArrayList<String> companyNamesFiltered = new ArrayList<String>();
@@ -164,7 +164,11 @@ public class DivsExcelData {
             //считываем тикер в строке
             Cell cell = row.getCell(symbolColumn);
             //добавляем тике в массив
-            tickers.add(cell.getStringCellValue());
+            String tickerValue = cell.getStringCellValue();
+            tickers.add(tickerValue);
+            //заполняем хешмап названиями компаний и их тикерами - пригодится в самом конце для вывода итоговых отобранных списков
+            if (companyNamesAndTickers.size() < names.size())
+                companyNamesAndTickers.put(tickerValue,names.get(i));
         }
         return tickers;
     }

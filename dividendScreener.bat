@@ -1,0 +1,1 @@
+java -Dfile.encoding=Cp866 -classpath ".\*;jars\*" Base
