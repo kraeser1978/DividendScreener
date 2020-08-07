@@ -11,7 +11,6 @@ import java.util.Calendar;
 import java.util.Collections;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
 import static Common.DivsCoreData.props;
 
 public class RapidAPIData {
@@ -20,6 +19,19 @@ public class RapidAPIData {
     public ArrayList<String> tickersPreviousSelection = new ArrayList<String>();
     final String API_URL = props.APIURL();final String rapidHost = props.rapidHost();final String rapidHostValue = props.rapidHostValue();
     final String rapidKey = props.rapidKey();final String rapidKeyValue = props.rapidKeyValue();
+    public ArrayList<String> uniqueTickers = new ArrayList<String>();
+
+    public void findUniqueTickers(ArrayList<String> tickers,ArrayList<String> tickersPreviousSelection){
+        boolean isFound = false;
+        for (int i = 0; i < tickersPreviousSelection.size();i++){
+            String tickerToCheck = tickersPreviousSelection.get(i);
+            for (int t = 0; t < tickers.size(); t++){
+                isFound = tickers.get(t).equals(tickerToCheck);
+                if (isFound) break;
+            }
+            if (!isFound) uniqueTickers.add(tickerToCheck);
+        }
+    }
 
     public boolean compareCompanyQuotes(ArrayList<Double> quotes){
         //метод выполняет сравнение каждого последующего значения элемента массива с предыдущим
@@ -37,10 +49,10 @@ public class RapidAPIData {
         return flag;
     }
 
-    public void checkIncomeGrowth() {
+    public boolean checkIncomeGrowth() {
         ArrayList<String> tickersFiltered = new ArrayList<String>();
         boolean isToContinue = DivsCoreData.shouldAnalysisContinue(tickersPreviousSelection,tickers);
-        if (!isToContinue) return;
+        if (!isToContinue) return false;
         logger.log(Level.INFO, "метод проверяет актив на наличие поступательного роста показателей Net Income и Operating Income за 4 последних года");
         logger.log(Level.INFO, "если значение показателя сокращалось внутри 4х летнего интервала , то компания исключается из выборки");
         boolean flag = false;
@@ -59,6 +71,7 @@ public class RapidAPIData {
             } else logger.log(Level.INFO, "Net Income или Operating Income компании " + tickers.get(i) + " в течение выбранного периода некоторое время снижались - исключаем ее из выборки");
         }
         copyFilteredTickers(tickersFiltered);
+        return true;
     }
 
     public ArrayList<Double> getNetIncomeValues(JSONArray incomeStatementHistory){
@@ -94,13 +107,13 @@ public class RapidAPIData {
                         .asJson();
         } catch (Exception e) {
             logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            return null;
         }
         JSONArray incomeStatementHistory;
-        if (response.getBody() != null) {
-            logger.log(Level.INFO, "запрос успешно отработал");
-            JSONObject jsonObject = response.getBody().getObject().getJSONObject("incomeStatementHistory");
-            incomeStatementHistory = jsonObject.getJSONArray("incomeStatementHistory");
-        } else incomeStatementHistory = null;
+        logger.log(Level.INFO, "запрос успешно отработал");
+        JSONObject jsonObject = response.getBody().getObject().getJSONObject("incomeStatementHistory");
+        if (jsonObject == null) return null;
+        incomeStatementHistory = jsonObject.getJSONArray("incomeStatementHistory");
         return incomeStatementHistory;
     }
 
@@ -112,9 +125,9 @@ public class RapidAPIData {
         return epochStr;
     }
 
-    public void checkDividendsGrowth() {
+    public boolean checkDividendsGrowth() {
         boolean isToContinue = DivsCoreData.shouldAnalysisContinue(tickersPreviousSelection,tickers);
-        if (!isToContinue) return;
+        if (!isToContinue) return false;
         logger.log(Level.INFO, "метод проверяет актив на наличие поступательного роста его дивидендов в течение 10 прошедших лет");
         logger.log(Level.INFO, "если компания на каком-либо участке исторических данных снижала выплаты по дивидендам, она исключается из выборки");
         String startDate = getDateAsEpoch(Calendar.YEAR,-10);
@@ -133,12 +146,13 @@ public class RapidAPIData {
             } else logger.log(Level.INFO, "размер дивиденда компании " + tickers.get(i) + " в течение выбранного периода некоторое время снижался - исключаем ее из выборки");
         }
         copyFilteredTickers(tickersFiltered);
+        return true;
     }
 
-    public void compareStockAgainstEthalonETF() {
+    public boolean compareStockAgainstEthalonETF() {
         ArrayList<String> tickersFiltered = new ArrayList<String>();
         boolean isToContinue = DivsCoreData.shouldAnalysisContinue(tickersPreviousSelection,tickers);
-        if (!isToContinue) return;
+        if (!isToContinue) return false;
         logger.log(Level.INFO, "сравниваем прирост стоимости акций компаний с приростом стоимости эталонного ETF SDY за прошедшие 10 лет...");
         logger.log(Level.INFO, "если актив вырос меньше SDY, компания исключается из выборки");
         double ethalonValue = 0;
@@ -162,6 +176,7 @@ public class RapidAPIData {
             } else logger.log(Level.INFO, tickers.get(i) + " вырос слабее эталона - исключаем его из выборки");
         }
         copyFilteredTickers(tickersFiltered);
+        return true;
     }
 
     public ArrayList<Double> getDividendHistoryData(String startDate, String endDate, String ticker) {
@@ -174,18 +189,18 @@ public class RapidAPIData {
                     .asJson();
         } catch (Exception e) {
             logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            return null;
         }
         ArrayList<Double> dividends = new ArrayList<>();
-        if (response.getBody() != null) {
-            logger.log(Level.INFO, "запрос успешно отработал");
-            JSONArray eventsDataArray = response.getBody().getObject().getJSONArray("eventsData");
-            JSONObject jObject;
-            for (int i=0; i < eventsDataArray.length();i++){
-                jObject = eventsDataArray.getJSONObject(i);
-                double divValue = jObject.optDouble("amount");
-                dividends.add(divValue);
-            }
-        } else dividends = null;
+        logger.log(Level.INFO, "запрос успешно отработал");
+        JSONArray eventsDataArray = response.getBody().getObject().getJSONArray("eventsData");
+        if (eventsDataArray == null) return null;
+        JSONObject jObject;
+        for (int i=0; i < eventsDataArray.length();i++){
+            jObject = eventsDataArray.getJSONObject(i);
+            double divValue = jObject.optDouble("amount");
+            dividends.add(divValue);
+        }
         return dividends;
     }
 
@@ -226,14 +241,14 @@ public class RapidAPIData {
                     .asJson();
         } catch (Exception e) {
             logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            return null;
         }
         JSONObject jObject;
-        if (response.getBody() != null) {
-            logger.log(Level.INFO, "запрос успешно отработал");
-            JSONObject chart = response.getBody().getObject().getJSONObject("chart");
-            JSONArray result = chart.getJSONArray("result");
-            jObject = result.getJSONObject(0);
-        } else jObject = null;
+        logger.log(Level.INFO, "запрос успешно отработал");
+        JSONObject chart = response.getBody().getObject().getJSONObject("chart");
+        if (chart == null) return null;
+        JSONArray result = chart.getJSONArray("result");
+        jObject = result.getJSONObject(0);
         return jObject;
     }
 

@@ -1,15 +1,37 @@
 package Common;
 
 import com.codeborne.selenide.*;
+import com.google.common.base.Utf8;
+import com.mashape.unirest.http.HttpResponse;
+import com.mashape.unirest.http.JsonNode;
+import com.mashape.unirest.http.Unirest;
+import com.yandex.disk.rest.Credentials;
+import com.yandex.disk.rest.ProgressListener;
+import com.yandex.disk.rest.RestClient;
+import com.yandex.disk.rest.exceptions.ServerException;
+import com.yandex.disk.rest.exceptions.ServerIOException;
+import com.yandex.disk.rest.exceptions.WrongMethodException;
+import com.yandex.disk.rest.json.Link;
+import io.netty.handler.codec.base64.Base64Decoder;
 import org.apache.commons.io.FileUtils;
 import org.apache.poi.ss.usermodel.Cell;
+import org.bouncycastle.util.encoders.Base64Encoder;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.junit.Test;
 import org.openqa.selenium.By;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.interactions.Actions;
 import java.io.File;
 import java.io.IOException;
+import java.io.StringReader;
+import java.net.URISyntaxException;
 import java.net.URLDecoder;
+import java.nio.charset.Charset;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.logging.FileHandler;
 import java.util.logging.Level;
@@ -26,17 +48,180 @@ public class DivsCoreData {
     public static Properties locators = new Properties();
     public static Set<String> locatorCodes;
     public static Props props;
+    public static String email = "DividendAutoScreener@yandex.ru";
+
+    public static boolean checkUserIsEnabled(){
+        boolean isUserEnabled =  false;
+        String pclistFileName = Configuration.reportsFolder + "\\pclist.txt";
+        String fileContents = null;
+        //считываем файл со списком имен компьютеров зарегистрированных пользователей
+        try {
+            fileContents = FileUtils.readFileToString(new File(pclistFileName), "UTF-8");
+        } catch (IOException e) {
+            logger.log(Level.INFO,"Ошибка при считывании файла дат. Обратитесь к разработчику по email: " + email);
+            e.printStackTrace();
+        }
+        //считываем список компьютеров пользователей и их конечные даты абонентской платы по пользователям
+        Properties pclist =  new Properties();
+        try {
+            pclist.load(new StringReader(fileContents));
+        } catch (IOException e) {
+            logger.log(Level.INFO,"Ошибка при разборе данных из файла дат. Обратитесь к разработчику по email: " + email);
+            e.printStackTrace();
+        }
+        Date userEndLicense =  null;
+        //проверяем, есть ли комп пользователя в списке
+        String currentUserPC = System.getenv("COMPUTERNAME");
+        boolean isUserIncluded = fileContents.contains(currentUserPC);
+        //если компьютер пользователя в списке - проверяем дату окончания абонентской платы
+        if (isUserIncluded) {
+            String dateFromFile = pclist.getProperty(currentUserPC);
+            //берем сегодняшнюю дату
+            DateFormat dateFormat = new SimpleDateFormat("dd MMM yyyy");
+            Date today = new Date();
+            //конвертируем дату из файла
+            try {
+                userEndLicense = new SimpleDateFormat("dd/MM/yyyy").parse(dateFromFile);
+            } catch (ParseException e) {
+                logger.log(Level.INFO,"Ошибка при конвертации даты из файла. Обратитесь к разработчику по email: " + email);
+                e.printStackTrace();
+            }
+            //сравниваем дату окончания абонентской платы с текущей
+            //если срок действия абонента еще не истек, пользователь продолжает работать с приложением
+            if (userEndLicense.compareTo(today) >= 0 ) isUserEnabled = true;
+            //если срок действия абонента истек, приложение прекращает работу
+            else {
+                String userEndLicenseStr = dateFormat.format(userEndLicense) + "г.";
+                logger.log(Level.INFO, "Ваша подписка неактивна и была завершена " + userEndLicenseStr + " Необходимо продлить подписку на приложение. ");
+                logger.log(Level.INFO,"Пожалуйста свяжитесь с разработчиком по email: " + email);
+                isUserEnabled = false;
+            }
+        }
+        else {
+            //добавляем има компьютера нового пользователя в файл с 7 дневным пробным периодом
+            Calendar cal = Calendar.getInstance();
+            cal.add(Calendar.DATE, 7);
+            Date inSevenDays = cal.getTime();
+            DateFormat dateFormat = new SimpleDateFormat("dd/MM/yyyy");
+            String newExpDate = dateFormat.format(inSevenDays);
+            String newFileContents = fileContents + "\r\n" + currentUserPC + " = " + newExpDate;
+            try {
+                FileUtils.write(new File(pclistFileName),newFileContents,"UTF-8");
+                //загружаем обновленный файл с именем компьютера нового пользователя
+                uploadFileToDisk();
+                logger.log(Level.INFO, "Ваша подписка на приложение ранее не была оформлена. Вам предоставляется 7 дневный пробный период использования приложения. ");
+                logger.log(Level.INFO,"По истечении пробного периода для оформления подписки пожалуйста свяжитесь с разработчиком по email: " + email);
+                pressEnterToContinue();
+            } catch (IOException e) {
+                e.printStackTrace();
+                logger.log(Level.INFO,"Ошибка сохранения нового пользователя. Обратитесь к разработчику по email: " + email);
+            }
+            isUserEnabled =  true;
+        }
+        return isUserEnabled;
+    }
+
+    private static void pressEnterToContinue()
+    {
+        System.out.println("Для продолжения работы нажмите клавишу Enter...");
+        try
+        {
+            System.in.read();
+        }
+        catch(Exception e)
+        {}
+    }
+
+    public static void fileDownload() throws IOException {
+        String diskAPI_URL = props.diskAPIURL();
+        String OAuthKey = props.OAuthKey();
+//        diskAPI_URL = "https://cloud-api.yandex.net/v1";
+//        OAuthKey = "AgAAAAAVoHfDAAaI3ubO0T63JUkKmcLn5ngNRxI";
+        HttpResponse<JsonNode> response1 = null;
+        String location = "disk:/Приложения/dividendscreener/pclist.txt";
+        String fullFileName = Configuration.reportsFolder + "\\pclist.txt";
+        try {
+            response1 = Unirest.get(diskAPI_URL + "/disk/resources/download?path=" + location)
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "OAuth " + OAuthKey)
+                    .asJson();
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "запрос ссылки для скачивания файла выдал ошибку");
+//            return null;
+        }
+        logger.log(Level.INFO, "ссылка для скачивания файла сформирована");
+        JSONObject jsonObject = response1.getBody().getObject();
+        JSONArray jsonArray = response1.getBody().getArray();
+        String fileDownloadUrl = jsonObject.getString("href");
+
+        HttpResponse<String> response2 = null;
+        try {
+            response2 = Unirest.get(fileDownloadUrl)
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "OAuth " + OAuthKey)
+                    .asString();
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "скачивание файла завершилось с ошибкой");
+//            return null;
+        }
+        if (response2.getStatus() == 200) {
+            String fileContents = response2.getBody();
+            FileUtils.write(new File(fullFileName),fileContents,"UTF-8");
+            logger.log(Level.INFO, "файл успешно загружен на диск");
+        }
+    }
+
+    public static void uploadFileToDisk() throws IOException {
+        String diskAPI_URL = props.diskAPIURL();
+        String OAuthKey = props.OAuthKey();
+        HttpResponse<JsonNode> response1 = null;
+        String location = "disk:/Приложения/dividendscreener/pclist.txt";
+        String fullFileName = Configuration.reportsFolder + "\\pclist.txt";
+        String fileContents = FileUtils.readFileToString(new File(fullFileName), "UTF-8");
+        fullFileName = fullFileName.replace("\\","%2F");
+//        String fileNameEncoded = Base64.getUrlEncoder().encodeToString(fullFileName.getBytes());
+        try {
+            response1 = Unirest.get(diskAPI_URL + "/disk/resources/upload?path=" + location + "&overwrite=true")
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "OAuth " + OAuthKey)
+                    .asJson();
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "запрос ссылки для закачки файла выдал ошибку");
+//            return null;
+        }
+        logger.log(Level.INFO, "ссылка для загрузки файла сформирована");
+        JSONObject jsonObject = response1.getBody().getObject();
+        JSONArray jsonArray = response1.getBody().getArray();
+        String fileUploadUrl = jsonObject.getString("href");
+
+        HttpResponse<JsonNode> response2 = null;
+        try {
+            response2 = Unirest.put(fileUploadUrl)
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "OAuth " + OAuthKey)
+                    .body(fileContents)
+                    .asJson();
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "закачка файла завершилась с ошибкой");
+//            return null;
+        }
+        logger.log(Level.INFO, "файл успешно загружен на диск");
+    }
 
     public void reportFinalFilteredLists(ArrayList<String> tickers, HashMap<String,String> namesAndTickers, String selectionText){
         logger.log(Level.INFO,"");
         logger.log(Level.INFO,selectionText);
         logger.log(Level.INFO,"отобрано компаний = " + tickers.size());
         for (int i = 0; i < tickers.size();i++){
-            String ticketCode = tickers.get(i);
-            if (namesAndTickers.keySet().contains(ticketCode)){
+            String tickerCode = tickers.get(i);
+            if (namesAndTickers.keySet().contains(tickerCode)){
                 //извлекаем полное название компании
-                String companyName = namesAndTickers.get(ticketCode);
-                logger.log(Level.INFO,companyName + " (" + ticketCode + ")");
+                String companyName = namesAndTickers.get(tickerCode);
+                logger.log(Level.INFO,companyName + " (" + tickerCode + ")");
             }
         }
     }
@@ -69,6 +254,10 @@ public class DivsCoreData {
         logInit(currentWorkingDir + "\\dividendScreener_1.0.log");
         logger.log(Level.INFO, "");
         logger.log(Level.INFO, "");
+        //проверяем пользователя на наличие активной абонентской платы
+        fileDownload();
+        boolean isToContinueWork = checkUserIsEnabled();
+        if (!isToContinueWork) System.exit(1);
 //        //считываем локаторы
 //        String locatorsFilePath = System.getenv("RmanpoQA_personal_case_locators");
 //        String locatorsText = FileUtils.readFileToString(new File(locatorsFilePath), "UTF-8");
@@ -119,7 +308,7 @@ public class DivsCoreData {
         log.setLevel(Level.CONFIG);
     }
 
-    public static void downloadDivsFile() throws IOException {
+    public static void downloadDivsFile() throws IOException, URISyntaxException {
         String downloadedName = Configuration.reportsFolder + "\\USDividendChampions";
         File downloadedXlsFile = new File(downloadedName + ".xlsx");
         File downloadedFile = new File(downloadedName);

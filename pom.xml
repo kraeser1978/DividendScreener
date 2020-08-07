@@ -111,5 +111,12 @@
             <version>20140107</version>
         </dependency>
 
+        <dependency>
+            <groupId>com.yandex.android</groupId>
+            <artifactId>disk-restapi-sdk</artifactId>
+            <version>1.03</version>
+        </dependency>
+
+
     </dependencies>
 </project>

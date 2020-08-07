@@ -1,5 +1,6 @@
 package Common;
 
+import com.codeborne.selenide.Configuration;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellAddress;
@@ -26,10 +27,10 @@ public class DivsExcelData {
     public HashMap<String,Integer> fieldsColumns = new HashMap<>();
     public HashMap<String,String> companyNamesAndTickers = new HashMap<>();
 
-    public void filterCompanies(int Column, String searchCriteria,String criteriaDescription) throws ParseException {
+    public boolean filterCompanies(int Column, String searchCriteria,String criteriaDescription) throws ParseException {
         ArrayList<String> companyNamesFiltered = new ArrayList<String>();
         boolean isToContinue = DivsCoreData.shouldAnalysisContinue(companyNamesPreviousSelection,companyNames);
-        if (!isToContinue) return;
+        if (!isToContinue) return false;
         logger.log(Level.INFO,criteriaDescription);
         XSSFRow row = null; double expectedValue = 0,currentValue = 0; Date currentDate,expectedDate;
         XSSFSheet sheet = companiesBook.getSheet("All CCC");
@@ -69,6 +70,96 @@ public class DivsExcelData {
             }
         }
         copyFilteredCompanies(companyNamesFiltered);
+        return true;
+    }
+
+    public String generateExcelReport(ArrayList<String> tickers,HashMap<String,String> criteriaExecutionStatuses,String excelTemplateShortName) throws IOException {
+        File excelTemplate = new File(excelTemplateShortName);
+        FileInputStream file = new FileInputStream(excelTemplate);
+        XSSFWorkbook book = new XSSFWorkbook(file);
+        XSSFSheet sheet = book.getSheet("ScannerResults");
+
+        //заполняем шапку с наименованиями компаний и их тикерами
+        int columnSeqNo;
+        Row companyNamesRow = sheet.getRow(2);
+        Row tickersRow;
+        //алгоритм для заполнения с нуля последней выборкой
+        if (companyNamesRow == null){
+            columnSeqNo = 2;
+            companyNamesRow = sheet.createRow(2);
+            tickersRow = sheet.createRow(3);
+        } else {
+            //ищем последнюю заполненную ячейку с наименованием компании
+            //дальше заполнение статусов будет вестить начиная со следующей свободной колонки
+            columnSeqNo  = companyNamesRow.getLastCellNum();
+            tickersRow = sheet.getRow(3);
+        }
+        int columnSeqNoOriginal = columnSeqNo;
+
+        String companyName = "";
+        for (int i = 0; i < tickers.size();i++){
+            String ticker = tickers.get(i);
+            if (companyNamesAndTickers.keySet().contains(ticker)) {
+                //извлекаем полное название компании
+                companyName = companyNamesAndTickers.get(ticker);
+            }
+            //заполняем строку с наименованиями компаний
+            Cell c = companyNamesRow.getCell(columnSeqNo);
+            if (c == null) {
+                c = companyNamesRow.createCell(columnSeqNo);
+            }
+            c.setCellValue(companyName);
+            //заполняем строку с тикерами компаний
+            Cell cell = tickersRow.getCell(columnSeqNo);
+            if (cell == null) {
+                cell = tickersRow.createCell(columnSeqNo);
+            }
+            cell.setCellValue(ticker);
+            columnSeqNo = columnSeqNo + 1;
+        }
+
+        //заполняем статусы по критериям для выборки компаний
+        columnSeqNo = columnSeqNoOriginal;
+        int startRow = 5;
+        for (Map.Entry<String, String> entry : criteriaExecutionStatuses.entrySet()){
+            String key = entry.getKey();
+            Row row = sheet.getRow(startRow);
+            Cell criteria = row.getCell(0);
+            CellType cellType = criteria.getCellType();
+            if (cellType.name() == "STRING") {
+                String criteriaName = criteria.getStringCellValue();
+                if (criteriaName.equals(key)) {
+                    //если строка с критерием найдена, заполняем статусы для компаний
+                    String executionStatus = entry.getValue();
+                    int lastColumn = columnSeqNo + tickers.size();
+                    for (int i = columnSeqNo; i < lastColumn;i++){
+                        //заполняем строку статусами
+                        Cell c = row.getCell(i);
+                        if (c == null) {
+                            c = row.createCell(i);
+                        }
+                        c.setCellValue(executionStatus);
+                    }
+                }
+            }
+            startRow = startRow + 1;
+        }
+        //задаем дату для шаблона имени нового файла отчета
+        String newReportName = "";
+        if (!excelTemplateShortName.contains("_")){
+            Calendar cal = Calendar.getInstance();
+            Date today = cal.getTime();
+            DateFormat dateFormat = new SimpleDateFormat("dd_MM_yyyy_hh_mm");
+            String newDateStr = dateFormat.format(today);
+            int extPos = excelTemplateShortName.indexOf(".xlsx");
+            newReportName = excelTemplateShortName.substring(0,extPos) + "_" + newDateStr + ".xlsx";
+        } else newReportName = excelTemplateShortName;
+        FileOutputStream fos = new FileOutputStream(newReportName);
+        book.write(fos);
+        book.close();
+        fos.close();
+        file.close();
+        return newReportName;
     }
 
     public void getSearchCriteria(XSSFSheet sheet){
@@ -81,28 +172,28 @@ public class DivsExcelData {
         ArrayList<String> MktCap = new ArrayList<String>();
         ArrayList<String> pe = new ArrayList<String>();
 //        Yrs.add("15");
-//        Yrs.add("параметр Yrs - выбираем компании, которые платят дивиденды 15 и более лет...");
+//        Yrs.add("Yrs - компании, которые платят дивиденды 15 и более лет");
 //        Yrs.add("GREATER_THAN_OR_EQUALS");
         Yield.add("2.50");
-        Yield.add("параметр Div.Yield - дивиденды от 2.5% годовых...");
+        Yield.add("Div.Yield - дивиденды от 2.5% годовых");
         Yield.add("GREATER_THAN_OR_EQUALS");
         Payouts.add("4");
-        Payouts.add("параметр Payouts/Year - частота выплаты дивидендов - не реже 4 раз в год...");
+        Payouts.add("Payouts/Year - частота выплаты дивидендов - не реже 4 раз в год");
         Payouts.add("GREATER_THAN_OR_EQUALS");
         mr.add("2.00");
-        mr.add("параметр MR%Inc. - ежегодный прирост дивидендов - от 2% в год...");
+        mr.add("MR%Inc. - ежегодный прирост дивидендов от 2% в год");
         mr.add("GREATER_THAN_OR_EQUALS");
         exDiv.add(getPrevYear());
-        exDiv.add("параметр Last Increased on: Ex-Div - дата последнего повышения дивидендов - не позже, чем год назад...");
+        exDiv.add("Last Increased on: Ex-Div - дата последнего повышения дивидендов - не позже, чем год назад");
         exDiv.add("GREATER_THAN_OR_EQUALS");
         EPS.add("70.00");
-        EPS.add("параметр EPS%Payout - доля прибыли, направляемая на выплату дивидендов - не более 70%...");
+        EPS.add("EPS%Payout - доля прибыли, направляемая на выплату дивидендов, не более 70%");
         EPS.add("LESSER_THAN");
         MktCap.add("2000.00");
-        MktCap.add("параметр MktCap($Mil) - выбираем компании с капитализацией свыше 2млрд.долл...");
+        MktCap.add("MktCap($Mil) - компании с капитализацией свыше 2млрд.долл");
         MktCap.add("GREATER_THAN_OR_EQUALS");
         pe.add("21.00");
-        pe.add("параметр TTM P/E - срок окупаемости инвестиций в акции компании в годах - для американского рынка не должен превышать 21");
+        pe.add("TTM P/E - срок окупаемости инвестиций в акции компании в годах - для американского рынка не должен превышать 21");
         pe.add("LESSER_THAN");
         //заполняем хешмеп данными по критериям поиска по полям
 //        fieldsSearchCriterias.put("Yrs",Yrs);

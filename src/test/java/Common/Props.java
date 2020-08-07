@@ -65,4 +65,12 @@ public class Props {
         return properties.getProperty("screenshots_folder");
     }
 
+    public String diskAPIURL(){
+        return properties.getProperty("diskAPI_URL");
+    }
+
+    public String OAuthKey(){
+        return properties.getProperty("OAuthKey");
+    }
+
 }
