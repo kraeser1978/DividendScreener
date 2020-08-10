@@ -73,4 +73,15 @@ public class Props {
         return properties.getProperty("OAuthKey");
     }
 
+    public String gmailUsername(){
+        return properties.getProperty("gmailUsername");
+    }
+
+    public String gmailPassword(){
+        return properties.getProperty("gmailPassword");
+    }
+
+    public String isToSendReportByEmail(){
+        return properties.getProperty("isToSendReportByEmail");
+    }
 }

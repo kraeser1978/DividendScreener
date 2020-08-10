@@ -1,18 +1,9 @@
 package Common;
 
 import com.codeborne.selenide.*;
-import com.google.common.base.Utf8;
 import com.mashape.unirest.http.HttpResponse;
 import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
-import com.yandex.disk.rest.Credentials;
-import com.yandex.disk.rest.ProgressListener;
-import com.yandex.disk.rest.RestClient;
-import com.yandex.disk.rest.exceptions.ServerException;
-import com.yandex.disk.rest.exceptions.ServerIOException;
-import com.yandex.disk.rest.exceptions.WrongMethodException;
-import com.yandex.disk.rest.json.Link;
-import io.netty.handler.codec.base64.Base64Decoder;
 import org.apache.commons.io.FileUtils;
 import org.apache.poi.ss.usermodel.Cell;
 import org.bouncycastle.util.encoders.Base64Encoder;
@@ -22,13 +13,20 @@ import org.junit.Test;
 import org.openqa.selenium.By;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.interactions.Actions;
-import java.io.File;
-import java.io.IOException;
-import java.io.StringReader;
+
+import javax.activation.DataHandler;
+import javax.activation.DataSource;
+import javax.activation.FileDataSource;
+import javax.mail.*;
+import javax.mail.internet.InternetAddress;
+import javax.mail.internet.MimeBodyPart;
+import javax.mail.internet.MimeMessage;
+import javax.mail.internet.MimeMultipart;
+import java.io.*;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
+import java.security.GeneralSecurityException;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -39,6 +37,7 @@ import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 import static com.codeborne.selenide.Selenide.*;
 import static com.codeborne.selenide.WebDriverRunner.closeWebDriver;
+import org.junit.Test;
 
 public class DivsCoreData {
     private static Logger logger = Logger.getLogger(DivsCoreData.class.getSimpleName());
@@ -49,6 +48,115 @@ public class DivsCoreData {
     public static Set<String> locatorCodes;
     public static Props props;
     public static String email = "DividendAutoScreener@yandex.ru";
+
+    public ArrayList<String> getActiveUsersEmailList(){
+        logger.log(Level.INFO, "Формируем список емейлов активных пользователей...");
+        ArrayList<String> validEmails = new ArrayList<>();
+        String pclistFileName = Configuration.reportsFolder + "\\emailslist.txt";
+        List<String> fileContents = new ArrayList<String>();
+        //считываем файл со списком емейлов зарегистрированных пользователей
+        try {
+            fileContents = FileUtils.readLines(new File(pclistFileName), "UTF-8");
+        } catch (IOException e) {
+            logger.log(Level.INFO,"Ошибка при считывании файла с емейлами");
+            e.printStackTrace();
+        }
+        //берем сегодняшнюю дату
+        DateFormat dateFormat = new SimpleDateFormat("dd MMM yyyy");
+        Date today = new Date();
+        Date userEndLicense =  null;
+        //составляем список активных емейл адресов
+        for (int i=0; i < fileContents.size(); i++){
+            String currentEmail = fileContents.get(i);
+            int currentEmailExpirationDatePos = currentEmail.indexOf("=");
+            String currentEmailExpirationDate = currentEmail.substring(currentEmailExpirationDatePos+2);
+            //конвертируем полученную из файла дату
+            try {
+                userEndLicense = new SimpleDateFormat("dd/MM/yyyy").parse(currentEmailExpirationDate);
+            } catch (ParseException e) {
+                logger.log(Level.INFO,"Ошибка при конвертации даты из файла с емейлами.");
+                e.printStackTrace();
+            }
+            String emailAdress = currentEmail.substring(0,currentEmailExpirationDatePos-1);
+            //сравниваем дату окончания абонентской платы с текущей
+            //если срок действия абонента еще не истек, пользователь включается в список получающих отчет
+            int comResult = userEndLicense.compareTo(today);
+            if (comResult >= 0 ) validEmails.add(emailAdress);
+                //если срок действия абонента истек, приложение прекращает работу
+            else {
+                String userEndLicenseStr = dateFormat.format(userEndLicense) + "г.";
+                logger.log(Level.INFO, "Для пользователя с емейлом " + emailAdress + " подписка неактивна и была завершена " + userEndLicenseStr);
+            }
+        }
+        return validEmails;
+    }
+
+    public Session createGmailSession(){
+        final String gmailUsername = props.gmailUsername();
+        final String gmailPassword = props.gmailPassword();
+        Properties props = new Properties();
+        props.put("mail.smtp.auth", "true");
+        props.put("mail.smtp.starttls.enable", "true");
+        props.put("mail.smtp.host", "smtp.gmail.com");
+        props.put("mail.smtp.port", "587");
+        Session session = Session.getInstance(props,
+                new javax.mail.Authenticator() {
+                    protected PasswordAuthentication getPasswordAuthentication() {
+                        return new PasswordAuthentication(gmailUsername, gmailPassword);
+                    }
+                });
+        return session;
+    }
+
+    public void sendEmail(Session session, ArrayList<String> emailsList, String subject, String body, String attachment) {
+        Multipart multipart = new MimeMultipart();
+        try {
+            // Create the message body part
+            BodyPart messageBodyPart = new MimeBodyPart();
+            // Fill the message
+            messageBodyPart.setText(body);
+            // Create a multipart message for attachment
+            // Set text message part
+            multipart.addBodyPart(messageBodyPart);
+            // Second part is attachment
+            messageBodyPart = new MimeBodyPart();
+            DataSource source = new FileDataSource(attachment);
+            messageBodyPart.setDataHandler(new DataHandler(source));
+            int shortFileNameStartPos = attachment.lastIndexOf("\\");
+            String fileName = attachment.substring(shortFileNameStartPos+1);
+            messageBodyPart.setFileName(fileName);
+            multipart.addBodyPart(messageBodyPart);
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        for (int i=0; i < emailsList.size(); i++){
+            try
+            {
+                MimeMessage msg = new MimeMessage(session);
+                //set message headers
+                msg.addHeader("Content-type", "text/HTML; charset=UTF-8");
+                msg.addHeader("format", "flowed");
+                msg.addHeader("Content-Transfer-Encoding", "8bit");
+
+                msg.setFrom(new InternetAddress("dividendscreener@gmail.com", "DividendAutoScreener"));
+                msg.setReplyTo(InternetAddress.parse("serk777@inbox.ru", false));
+                msg.setSubject(subject, "UTF-8");
+                msg.setSentDate(new Date());
+                msg.setRecipients(Message.RecipientType.TO, InternetAddress.parse(emailsList.get(i), false));
+
+                // Send the complete message parts
+                msg.setContent(multipart);
+                Transport.send(msg);
+                logger.log(Level.INFO, "Отчет отправлен по адресу " + emailsList.get(i));
+            }
+            catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+    }
 
     public static boolean checkUserIsEnabled(){
         boolean isUserEnabled =  false;
@@ -135,8 +243,6 @@ public class DivsCoreData {
     public static void fileDownload() throws IOException {
         String diskAPI_URL = props.diskAPIURL();
         String OAuthKey = props.OAuthKey();
-//        diskAPI_URL = "https://cloud-api.yandex.net/v1";
-//        OAuthKey = "AgAAAAAVoHfDAAaI3ubO0T63JUkKmcLn5ngNRxI";
         HttpResponse<JsonNode> response1 = null;
         String location = "disk:/Приложения/dividendscreener/pclist.txt";
         String fullFileName = Configuration.reportsFolder + "\\pclist.txt";

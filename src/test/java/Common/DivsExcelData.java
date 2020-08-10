@@ -73,6 +73,22 @@ public class DivsExcelData {
         return true;
     }
 
+    public HashMap<String,String> changeExecutionStatus(HashMap<String,String> criteriaExecutionStatuses,String testStatusToChange, String newTestStatus,String sortType){
+        String testCode = "";
+        LinkedList reverseStatuses = new LinkedList(criteriaExecutionStatuses.entrySet());
+        if (sortType.equals("reverse")) Collections.reverse(reverseStatuses);
+        for (int i=0; i< reverseStatuses.size();i++){
+            String test = reverseStatuses.get(i).toString();
+            if (test.contains(testStatusToChange)){
+                int div = test.indexOf("=");
+                testCode = test.substring(0,div);
+                break;
+            }
+        }
+        criteriaExecutionStatuses.put(testCode,newTestStatus);
+        return criteriaExecutionStatuses;
+    }
+
     public String generateExcelReport(ArrayList<String> tickers,HashMap<String,String> criteriaExecutionStatuses,String excelTemplateShortName) throws IOException {
         File excelTemplate = new File(excelTemplateShortName);
         FileInputStream file = new FileInputStream(excelTemplate);
@@ -162,7 +178,23 @@ public class DivsExcelData {
         return newReportName;
     }
 
-    public void getSearchCriteria(XSSFSheet sheet){
+    public HashMap<String,String> setDefaultExecutionStatus(String testStatus){
+        HashMap<String,String> criteriaExecutionStatuses = new LinkedHashMap<>();
+        criteriaExecutionStatuses.put("Yrs",testStatus);
+        criteriaExecutionStatuses.put("Yield",testStatus);
+        criteriaExecutionStatuses.put("Year",testStatus);
+        criteriaExecutionStatuses.put("Inc.",testStatus);
+        criteriaExecutionStatuses.put("Ex-Div",testStatus);
+        criteriaExecutionStatuses.put("Payout",testStatus);
+        criteriaExecutionStatuses.put("($Mil)",testStatus);
+        criteriaExecutionStatuses.put("P/E",testStatus);
+        criteriaExecutionStatuses.put("SDYCheck",testStatus);
+        criteriaExecutionStatuses.put("DivCheck",testStatus);
+        criteriaExecutionStatuses.put("IncomeCheck",testStatus);
+        return criteriaExecutionStatuses;
+    }
+
+    public void setSearchCriteria(XSSFSheet sheet){
 //        ArrayList<String> Yrs = new ArrayList<String>();
         ArrayList<String> Yield = new ArrayList<String>();
         ArrayList<String> Payouts = new ArrayList<String>();
