@@ -1,6 +1,5 @@
 package Common;
 
-import com.codeborne.selenide.Configuration;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellAddress;
@@ -18,6 +17,8 @@ import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static java.util.Collections.*;
+
 public class DivsExcelData {
     private static Logger logger = Logger.getLogger(DivsExcelData.class.getSimpleName());
     public ArrayList<String> companyNames = new ArrayList<String>();
@@ -26,6 +27,7 @@ public class DivsExcelData {
     public final HashMap<String,ArrayList<String>> fieldsSearchCriterias = new LinkedHashMap<>();
     public HashMap<String,Integer> fieldsColumns = new HashMap<>();
     public HashMap<String,String> companyNamesAndTickers = new HashMap<>();
+    HashMap<String,String> yieldsAndCompanies = new HashMap<>();
 
     public boolean filterCompanies(int Column, String searchCriteria,String criteriaDescription) throws ParseException {
         ArrayList<String> companyNamesFiltered = new ArrayList<String>();
@@ -76,7 +78,7 @@ public class DivsExcelData {
     public HashMap<String,String> changeExecutionStatus(HashMap<String,String> criteriaExecutionStatuses,String testStatusToChange, String newTestStatus,String sortType){
         String testCode = "";
         LinkedList reverseStatuses = new LinkedList(criteriaExecutionStatuses.entrySet());
-        if (sortType.equals("reverse")) Collections.reverse(reverseStatuses);
+        if (sortType.equals("reverse")) reverse(reverseStatuses);
         for (int i=0; i< reverseStatuses.size();i++){
             String test = reverseStatuses.get(i).toString();
             if (test.contains(testStatusToChange)){
@@ -89,54 +91,58 @@ public class DivsExcelData {
         return criteriaExecutionStatuses;
     }
 
-    public String generateExcelReport(ArrayList<String> tickers,HashMap<String,String> criteriaExecutionStatuses,String excelTemplateShortName) throws IOException {
+//    public String generateExcelReport(ArrayList<String> tickers,HashMap<String,String> criteriaExecutionStatuses,String excelTemplateShortName) throws IOException {
+    public String generateExcelReport(LinkedHashMap<String, Stocks> selection, HashMap<String,String> criteriaExecutionStatuses,String excelTemplateShortName) throws IOException {
         File excelTemplate = new File(excelTemplateShortName);
         FileInputStream file = new FileInputStream(excelTemplate);
         XSSFWorkbook book = new XSSFWorkbook(file);
         XSSFSheet sheet = book.getSheet("ScannerResults");
 
-        //заполняем шапку с наименованиями компаний и их тикерами
-        int columnSeqNo;
+        //определяем порядковый номер колонки, в которую нужно начинать запись данных
         Row companyNamesRow = sheet.getRow(2);
-        Row tickersRow;
-        //алгоритм для заполнения с нуля последней выборкой
-        if (companyNamesRow == null){
-            columnSeqNo = 2;
-            companyNamesRow = sheet.createRow(2);
-            tickersRow = sheet.createRow(3);
-        } else {
-            //ищем последнюю заполненную ячейку с наименованием компании
-            //дальше заполнение статусов будет вестить начиная со следующей свободной колонки
-            columnSeqNo  = companyNamesRow.getLastCellNum();
-            tickersRow = sheet.getRow(3);
-        }
+        //определяем последнюю заполненную колонку с наименованием компании (первая или вторая выборка)
+        int columnSeqNo  = companyNamesRow.getLastCellNum();
+        Row tickersRow = sheet.getRow(3);
+        Row lastPriceRow = sheet.getRow(4);
+        Row yieldRow = sheet.getRow(5);
         int columnSeqNoOriginal = columnSeqNo;
 
-        String companyName = "";
-        for (int i = 0; i < tickers.size();i++){
-            String ticker = tickers.get(i);
-            if (companyNamesAndTickers.keySet().contains(ticker)) {
-                //извлекаем полное название компании
-                companyName = companyNamesAndTickers.get(ticker);
-            }
+        //заполняем колонки с наименованиями компаний и их базовыми параметрами: тикер, Last Price, Yield
+        for (Map.Entry<String, Stocks> entry : selection.entrySet()){
+            String ticker = entry.getKey();
+            String companyName = entry.getValue().getCompanyName();
+            Double lastPrice = entry.getValue().getLastPrice();
+            Double yield = entry.getValue().getYield() / 100;
             //заполняем строку с наименованиями компаний
-            Cell c = companyNamesRow.getCell(columnSeqNo);
-            if (c == null) {
-                c = companyNamesRow.createCell(columnSeqNo);
+            Cell companyNamesRowCell = companyNamesRow.getCell(columnSeqNo);
+            if (companyNamesRowCell == null) {
+                companyNamesRowCell = companyNamesRow.createCell(columnSeqNo);
             }
-            c.setCellValue(companyName);
+            companyNamesRowCell.setCellValue(companyName);
             //заполняем строку с тикерами компаний
-            Cell cell = tickersRow.getCell(columnSeqNo);
-            if (cell == null) {
-                cell = tickersRow.createCell(columnSeqNo);
+            Cell tickersRowCell = tickersRow.getCell(columnSeqNo);
+            if (tickersRowCell == null) {
+                tickersRowCell = tickersRow.createCell(columnSeqNo);
             }
-            cell.setCellValue(ticker);
+            tickersRowCell.setCellValue(ticker);
+            //заполняем строку с Last Price
+            Cell lastPriceRowCell = lastPriceRow.getCell(columnSeqNo);
+            if (lastPriceRowCell == null) {
+                lastPriceRowCell = lastPriceRow.createCell(columnSeqNo);
+            }
+            lastPriceRowCell.setCellValue(lastPrice);
+            //заполняем строку с Yield
+            Cell yieldRowCell = yieldRow.getCell(columnSeqNo);
+            if (yieldRowCell == null) {
+                yieldRowCell = yieldRow.createCell(columnSeqNo);
+            }
+            yieldRowCell .setCellValue(yield);
             columnSeqNo = columnSeqNo + 1;
         }
 
         //заполняем статусы по критериям для выборки компаний
         columnSeqNo = columnSeqNoOriginal;
-        int startRow = 5;
+        int startRow = 7;
         for (Map.Entry<String, String> entry : criteriaExecutionStatuses.entrySet()){
             String key = entry.getKey();
             Row row = sheet.getRow(startRow);
@@ -147,7 +153,7 @@ public class DivsExcelData {
                 if (criteriaName.equals(key)) {
                     //если строка с критерием найдена, заполняем статусы для компаний
                     String executionStatus = entry.getValue();
-                    int lastColumn = columnSeqNo + tickers.size();
+                    int lastColumn = columnSeqNo + selection.size();
                     for (int i = columnSeqNo; i < lastColumn;i++){
                         //заполняем строку статусами
                         Cell c = row.getCell(i);
@@ -441,16 +447,20 @@ public class DivsExcelData {
         }
     }
 
-    public void saveCompanyNames(XSSFRow row, int nameColumn ){
+    public void addYieldAndCompanyNames(XSSFRow row, int nameColumn, int yieldColumn){
         //добавляем отобранную компанию в массив
-        Cell tickerCurrentRow = row.getCell(nameColumn);
-        String tickerCurrentRowVal = tickerCurrentRow.getStringCellValue();
-        companyNames.add(tickerCurrentRowVal);
+        Cell currentRowName = row.getCell(nameColumn);
+        String currentRowNameVal = currentRowName.getStringCellValue();
+        Cell currentRowYield = row.getCell(yieldColumn);
+        Double yeild = currentRowYield.getNumericCellValue();
+        String currentRowYieldVal = Double.toString(yeild);
+        yieldsAndCompanies.put(currentRowNameVal,currentRowYieldVal);
+//        companyNames.add(currentRowNameVal);
     }
 
     public void setAutoFilter(XSSFSheet sheet, final int column, final String value) throws IOException, InvalidFormatException {
         sheet.setAutoFilter(CellRangeAddress.valueOf("A1:Z1"));
-        int currentColumn,currentRow,nameColumn = 0;
+        int currentColumn,currentRow,nameColumn = 0,yieldColumn = 0;
         CTAutoFilter sheetFilter = sheet.getCTWorksheet().getAutoFilter();
         CTFilterColumn filterColumn = sheetFilter.addNewFilterColumn();
         filterColumn.setColId(column);
@@ -459,6 +469,7 @@ public class DivsExcelData {
         myFilter1.setOperator(STFilterOperator.GREATER_THAN_OR_EQUAL);
         myFilter1.setVal(value);
         nameColumn = findCell(sheet,"Name").getColumnIndex();
+        yieldColumn = findCell(sheet,"Yield").getColumnIndex();
         // We have to apply the filter ourselves by hiding the rows:
         for (Row row : sheet) {
             for (Cell c : row) {
@@ -469,7 +480,7 @@ public class DivsExcelData {
                     if (cellType.name() == "STRING" || cellType.name() == "BLANK") {
                         String currentValue = c.getStringCellValue();
                         if (currentValue == value) {
-                            saveCompanyNames((XSSFRow) row,nameColumn);
+                            addYieldAndCompanyNames((XSSFRow) row,nameColumn,yieldColumn);
                             break;
                         }
                     }
@@ -477,13 +488,47 @@ public class DivsExcelData {
                         double currentValue = c.getNumericCellValue();
                         double expectedValue = Double.parseDouble(value);
                         if (currentValue >= expectedValue) {
-                            saveCompanyNames((XSSFRow) row,nameColumn);
+                            addYieldAndCompanyNames((XSSFRow) row,nameColumn,yieldColumn);
                             break;
                         }
                     }
                 }
             }
         }
+        Set<Map.Entry<String, String>> entries = yieldsAndCompanies.entrySet();
+//        for(Map.Entry<String, String> entry : entries){
+//            System.out.println(entry.getKey() + " ==> " + entry.getValue());
+//        }
+        // Now let's sort HashMap by keys first // all you need to do is create a TreeMap with mappings of HashMap
+        // TreeMap keeps all entries in sorted order
+        TreeMap<String, String> sorted = new TreeMap<>(yieldsAndCompanies);
+        Set<Map.Entry<String, String>> mappings = sorted.entrySet();
+//        System.out.println("HashMap after sorting by keys in ascending order ");
+//        for(Map.Entry<String, String> mapping : mappings){
+//            System.out.println(mapping.getKey() + " ==> " + mapping.getValue());
+//        }
+        // Now let's sort the HashMap by values
+        // there is no direct way to sort HashMap by values but you
+        // can do this by writing your own comparator, which takes
+        // Map.Entry object and arrange them in order increasing
+        // or decreasing by values.
+        Comparator<Map.Entry<String, String>> valueComparator = new Comparator<Map.Entry<String,String>>() {
+            @Override public int compare(Map.Entry<String, String> e1, Map.Entry<String, String> e2) {
+                String v1 = e1.getValue();
+                String v2 = e2.getValue(); return v1.compareTo(v2);
+            }
+        }; // Sort method needs a List, so let's first convert Set to List in Java
+        List<Map.Entry<String, String>> listOfEntries = new ArrayList<Map.Entry<String, String>>(entries);
+        // sorting HashMap by values using comparator
+        Collections.sort(listOfEntries, valueComparator);
+        Collections.reverse(listOfEntries);
+        LinkedHashMap<String, String> sortedByValue = new LinkedHashMap<String, String>(listOfEntries.size());
+        // copying entries from List to Map
+        for(Map.Entry<String, String> entry : listOfEntries){
+            companyNames.add(entry.getKey());
+            sortedByValue.put(entry.getKey(), entry.getValue());
+        }
+//        logger.log(Level.INFO, "компании отфильтрованы по убыванию дивидендной доходности");
     }
 
     public XSSFSheet removeRows(XSSFSheet sheet, int startRow,int endRow){

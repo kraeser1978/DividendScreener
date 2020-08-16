@@ -21,6 +21,19 @@ public class RapidAPIData {
     final String rapidKey = props.rapidKey();final String rapidKeyValue = props.rapidKeyValue();
     public ArrayList<String> uniqueTickers = new ArrayList<String>();
 
+    public void resetNoOfStocksToMaxLimit(){
+        //отбрасываем часть компаний из предыдущей выборки - до максимально возможного кол-ва в отчете
+        int stocksNumLimit = Integer.parseInt(props.maximumNumberOfStocks());
+        int prevSelectionSize = uniqueTickers.size();
+        int totalNumOfSelectedStocks = tickers.size() + prevSelectionSize;
+        if (totalNumOfSelectedStocks > stocksNumLimit){
+            int deltaToExclude = totalNumOfSelectedStocks - stocksNumLimit;
+            for (int i = 1; i < deltaToExclude+1; i++){
+                uniqueTickers.remove(prevSelectionSize-i);
+            }
+        }
+    }
+
     public void findUniqueTickers(ArrayList<String> tickers,ArrayList<String> tickersPreviousSelection){
         boolean isFound = false;
         for (int i = 0; i < tickersPreviousSelection.size();i++){

@@ -61,6 +61,10 @@ public class Props {
         return properties.getProperty("expected_number_of_selected_stocks");
     }
 
+    public String maximumNumberOfStocks(){
+        return properties.getProperty("maximum_number_of_selected_stocks");
+    }
+
     public String screenshotsFolder(){
         return properties.getProperty("screenshots_folder");
     }
