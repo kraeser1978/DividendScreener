@@ -25,9 +25,6 @@ public class Base {
     public static DivsExcelData divsExcelData;
     public static RapidAPIData rapidAPIData;
     public static XSSFSheet companiesSheet;
-    public static final String testPassed = "Критерию соответствует";
-    public static final String testFailed = "Критерию не соответствует";
-    public static final String testNotExecuted = "Проверка по критерию не выполнялась";
     public static LinkedHashMap<String, Stocks> currentSelection = new LinkedHashMap<>();
     public static LinkedHashMap<String, Stocks> uniqueSelection = new LinkedHashMap<>();
 
@@ -73,7 +70,7 @@ public class Base {
     private static void preparation() throws Exception {
         divsCoreData = new DivsCoreData();
         divsCoreData.SetUp();
-        divsCoreData.downloadDivsFile();
+//        divsCoreData.downloadDivsFile();
         String newName = Configuration.reportsFolder + "\\USDividendChampions_singleTab";
         File newFileName = new File(newName + ".xlsx");
         divsExcelData = new DivsExcelData();
@@ -87,57 +84,46 @@ public class Base {
     @Test
     public static void main(String[] args) throws Exception {
         preparation();
-        HashMap<String,String> criteriaExecutionStatuses = new LinkedHashMap<>();
-        criteriaExecutionStatuses = divsExcelData.setDefaultExecutionStatus(testNotExecuted);
         boolean criteriaStatus = false;
-        logger.log(Level.INFO, "Yrs - компании, которые платят дивиденды 15 и более лет");
-        Cell numberOfYears = divsExcelData.findCell(companiesSheet,"Yrs");
-        divsExcelData.setAutoFilter(companiesSheet,numberOfYears.getColumnIndex(),"15");
-        criteriaExecutionStatuses.put("Yrs",testPassed);
-        logger.log(Level.INFO, "выполняем предварительный отбор по следующим фильтрам:");
-        for (Map.Entry<String, ArrayList<String>> entry : divsExcelData.fieldsSearchCriterias.entrySet()) {
-            String key = entry.getKey();
-            ArrayList<String> criterias = entry.getValue();
-            int columnSeqNo = divsExcelData.fieldsColumns.get(key);
-            divsExcelData.comparisonType = criterias.get(2);
-            criteriaStatus = divsExcelData.filterCompanies(columnSeqNo,criterias.get(0),criterias.get(1));
-            if (criteriaStatus) criteriaExecutionStatuses.put(key,testPassed);
-            else criteriaExecutionStatuses.put(key,testFailed);
-        }
-        //считываем тикеры компаний
         rapidAPIData = new RapidAPIData();
-        //передаем массив тикеров в класс для выполнения REST запросов к market data source
-        rapidAPIData.tickersPreviousSelection = divsExcelData.getCompaniesTickersByNames(companiesSheet,divsExcelData.companyNamesPreviousSelection);
-        rapidAPIData.tickers = divsExcelData.getCompaniesTickersByNames(companiesSheet,divsExcelData.companyNames);
-        //метод сравнивает прирост стоимости акции компании с приростом стоимости эталонного ETF SDY за прошедшие 10 лет
-        //если актив вырос меньше SDY, компания исключается из выборки
+        boolean skipMajorTests = rapidAPIData.isDraftListCanBeReUsed();
+        if (!skipMajorTests){
+            HashMap<String,String> criteriaExecutionStatuses = new LinkedHashMap<>();
+            criteriaExecutionStatuses = divsExcelData.setDefaultExecutionStatus(props.notTested());
+            logger.log(Level.INFO, "Yrs - компании, которые платят дивиденды 15 и более лет");
+            Cell numberOfYears = divsExcelData.findCell(companiesSheet,"Yrs");
+            divsExcelData.setAutoFilter(companiesSheet,numberOfYears.getColumnIndex(),"15");
+            criteriaExecutionStatuses.put("Yrs",props.testPassed());
+            logger.log(Level.INFO, "выполняем предварительный отбор по следующим фильтрам:");
+            for (Map.Entry<String, ArrayList<String>> entry : divsExcelData.fieldsSearchCriterias.entrySet()) {
+                String key = entry.getKey();
+                ArrayList<String> criterias = entry.getValue();
+                int columnSeqNo = divsExcelData.fieldsColumns.get(key);
+                divsExcelData.comparisonType = criterias.get(2);
+                criteriaStatus = divsExcelData.filterCompanies(columnSeqNo,criterias.get(0),criterias.get(1));
+                if (criteriaStatus) criteriaExecutionStatuses.put(key,props.testPassed());
+                else criteriaExecutionStatuses.put(key,props.testFailed());
+            }
+            rapidAPIData.tickers = divsExcelData.getCompaniesTickersByNames(companiesSheet,divsExcelData.companyNames);
+            rapidAPIData.filterByDividendAndPE();
+        }
         criteriaStatus = rapidAPIData.compareStockAgainstEthalonETF();
-        criteriaStatus = divsCoreData.shouldAnalysisContinue(rapidAPIData.tickersPreviousSelection,rapidAPIData.tickers);
-        if (criteriaStatus) criteriaExecutionStatuses.put("SDYCheck",testPassed);
-        else {
-            reportsGenerationAfterFiltering(criteriaExecutionStatuses);
-            return;
-        };
-        //метод проверяет актив на наличие поступательного роста его дивидендов в течение 10 прошедших лет
-        //если компания на каком-либо участке исторических данных снижала выплаты по дивидендам, она исключается из выборки
         criteriaStatus = rapidAPIData.checkDividendsGrowth();
-        criteriaStatus = divsCoreData.shouldAnalysisContinue(rapidAPIData.tickersPreviousSelection,rapidAPIData.tickers);
-        if (criteriaStatus) criteriaExecutionStatuses.put("DivCheck",testPassed);
-        else {
-            reportsGenerationAfterFiltering(criteriaExecutionStatuses);
-            return;
-        };
-        //метод проверяет актив на наличие поступательного роста показателей Net Income и Operating Income за 4 последние года
-        //если значение показателя сокращалось внутри 4х летнего интервала , то компания исключается из выборки
         criteriaStatus = rapidAPIData.checkIncomeGrowth();
-        criteriaStatus = divsCoreData.shouldAnalysisContinue(rapidAPIData.tickersPreviousSelection,rapidAPIData.tickers);
-        if (criteriaStatus) criteriaExecutionStatuses.put("IncomeCheck",testPassed);
-        reportsGenerationAfterFiltering(criteriaExecutionStatuses);
+        reportsGeneration2();
+    }
+
+    public static void reportsGeneration2() throws IOException {
+        logger.log(Level.INFO, "формирование отчета с результатами отбора компаний...");
+        String excelReport = divsExcelData.generateExcelReport2(rapidAPIData.stocksListMap);
+        Unirest.shutdown();
+        logger.log(Level.INFO, "отчет сформирован в файле " + excelReport);
+        sendReportByEmail(excelReport);
     }
 
     public static void reportsGenerationAfterFiltering(HashMap<String, String> criteriaExecutionStatuses) throws IOException {
         //меняем статус последнего успешно пройденного критерия на пройден
-        criteriaExecutionStatuses = divsExcelData.changeExecutionStatus(criteriaExecutionStatuses,testNotExecuted,testPassed,"");
+        criteriaExecutionStatuses = divsExcelData.changeExecutionStatus(criteriaExecutionStatuses,props.notTested(),props.testPassed(),"");
         String reportTemplateName = Configuration.reportsFolder + "\\DividendScreenerResultsTemplate.xlsx";
         //записываем данные по выбранным акциям в объекты
         currentSelection = fillInStocksData(rapidAPIData.tickers);
@@ -152,7 +138,7 @@ public class Base {
         //записываем данные по выбранным акциям в объекты
         uniqueSelection = fillInStocksData(rapidAPIData.uniqueTickers);
         //меняем статус последнего успешно пройденного критерия на не пройден для предпоследней выборки
-        criteriaExecutionStatuses = divsExcelData.changeExecutionStatus(criteriaExecutionStatuses,testPassed,testFailed,"reverse");
+        criteriaExecutionStatuses = divsExcelData.changeExecutionStatus(criteriaExecutionStatuses,props.testPassed(),props.testFailed(),"reverse");
         logger.log(Level.INFO, "добавляем в отчет данные по предпоследней выборке...");
         String excelFinalReport = divsExcelData.generateExcelReport(uniqueSelection,criteriaExecutionStatuses,excelFirstReport);
         Unirest.shutdown();

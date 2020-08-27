@@ -43,9 +43,6 @@ public class DivsCoreData {
     private static Logger logger = Logger.getLogger(DivsCoreData.class.getSimpleName());
     protected static WebDriver driver;
     static FileHandler fh = null;
-    public static HashMap <String,String> dataInput = new HashMap<String, String>();
-    public static Properties locators = new Properties();
-    public static Set<String> locatorCodes;
     public static Props props;
     public static String email = "DividendAutoScreener@yandex.ru";
 

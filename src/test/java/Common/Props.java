@@ -88,4 +88,17 @@ public class Props {
     public String isToSendReportByEmail(){
         return properties.getProperty("isToSendReportByEmail");
     }
+
+    public String testPassed(){
+        return properties.getProperty("test_passed");
+    }
+
+    public String testFailed(){
+        return properties.getProperty("test_failed");
+    }
+
+    public String notTested(){
+        return properties.getProperty("not_tested");
+    }
+
 }

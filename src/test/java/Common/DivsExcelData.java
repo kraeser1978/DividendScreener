@@ -1,5 +1,6 @@
 package Common;
 
+import com.codeborne.selenide.Configuration;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellAddress;
@@ -28,6 +29,68 @@ public class DivsExcelData {
     public HashMap<String,Integer> fieldsColumns = new HashMap<>();
     public HashMap<String,String> companyNamesAndTickers = new HashMap<>();
     HashMap<String,String> yieldsAndCompanies = new HashMap<>();
+
+    private void setStrValueToReportCell(Row row, int columnSeqNo, String value){
+        Cell cell = row.getCell(columnSeqNo);
+        if (cell == null) {
+            cell = row.createCell(columnSeqNo);
+        }
+        cell.setCellValue(value);
+    }
+
+    private void setStrValueToReportCell(Row row, int columnSeqNo, Double value){
+        Cell cell = row.getCell(columnSeqNo);
+        if (cell == null) {
+            cell = row.createCell(columnSeqNo);
+        }
+        cell.setCellValue(value);
+    }
+
+    public String generateExcelReport2(LinkedHashMap<String, Stocks> selection) throws IOException {
+        String reportTemplateName = Configuration.reportsFolder + "\\DividendScreenerResultsTemplate.xlsx";
+        File excelTemplate = new File(reportTemplateName);
+        FileInputStream file = new FileInputStream(excelTemplate);
+        XSSFWorkbook book = new XSSFWorkbook(file);
+        XSSFSheet sheet = book.getSheet("ScannerResults");
+        int rowNum = 2;//определяем порядковый номер первой строки, в которую нужно начинать запись данных
+        int columnSeqNo  = sheet.getRow(rowNum).getLastCellNum();//определяем последнюю заполненную колонку в первой пустой строке
+        //заполняем колонки с наименованиями компаний и их базовыми параметрами: тикер, Last Price, Yield
+        for (Map.Entry<String, Stocks> entry : selection.entrySet()){
+            String ticker = entry.getKey();
+            String companyName = entry.getValue().getCompanyName();
+            Double lastPrice = entry.getValue().getLastPrice();
+            Double yield = entry.getValue().getYield() / 100;
+            //заполняем базовые данные по каждой компании сверху вниз
+            setStrValueToReportCell(sheet.getRow(rowNum), columnSeqNo,companyName);
+            setStrValueToReportCell(sheet.getRow(rowNum+1), columnSeqNo,ticker);
+            setStrValueToReportCell(sheet.getRow(rowNum+2), columnSeqNo,lastPrice);
+            setStrValueToReportCell(sheet.getRow(rowNum+3), columnSeqNo,yield);
+            //заполняем статусы по критериям для компании
+            int criteriaStartRowNum = rowNum + 5;
+            int r = criteriaStartRowNum;
+            for (Map.Entry<String, String> criteria : entry.getValue().criteriaExecutionStatuses.entrySet()){
+                String criteriaStatus = criteria.getValue();
+                setStrValueToReportCell(sheet.getRow(r), columnSeqNo,criteriaStatus);
+                r = r + 1;
+            }
+            columnSeqNo = columnSeqNo + 1;
+        }
+        //задаем дату для шаблона имени нового файла отчета
+        String newReportName = "";
+        Calendar cal = Calendar.getInstance();
+        Date today = cal.getTime();
+        DateFormat dateFormat = new SimpleDateFormat("dd_MM_yyyy_hh_mm");
+        String newDateStr = dateFormat.format(today);
+        int extPos = reportTemplateName.indexOf(".xlsx");
+        newReportName = reportTemplateName.substring(0,extPos) + "_" + newDateStr + ".xlsx";
+        FileOutputStream fos = new FileOutputStream(newReportName);
+        book.write(fos);
+        book.close();
+        fos.close();
+        file.close();
+        return newReportName;
+    }
+
 
     public boolean filterCompanies(int Column, String searchCriteria,String criteriaDescription) throws ParseException {
         ArrayList<String> companyNamesFiltered = new ArrayList<String>();
@@ -91,7 +154,6 @@ public class DivsExcelData {
         return criteriaExecutionStatuses;
     }
 
-//    public String generateExcelReport(ArrayList<String> tickers,HashMap<String,String> criteriaExecutionStatuses,String excelTemplateShortName) throws IOException {
     public String generateExcelReport(LinkedHashMap<String, Stocks> selection, HashMap<String,String> criteriaExecutionStatuses,String excelTemplateShortName) throws IOException {
         File excelTemplate = new File(excelTemplateShortName);
         FileInputStream file = new FileInputStream(excelTemplate);
@@ -202,19 +264,19 @@ public class DivsExcelData {
 
     public void setSearchCriteria(XSSFSheet sheet){
 //        ArrayList<String> Yrs = new ArrayList<String>();
-        ArrayList<String> Yield = new ArrayList<String>();
+//        ArrayList<String> Yield = new ArrayList<String>();
         ArrayList<String> Payouts = new ArrayList<String>();
         ArrayList<String> mr = new ArrayList<String>();
         ArrayList<String> exDiv = new ArrayList<String>();
         ArrayList<String> EPS = new ArrayList<String>();
         ArrayList<String> MktCap = new ArrayList<String>();
-        ArrayList<String> pe = new ArrayList<String>();
+//        ArrayList<String> pe = new ArrayList<String>();
 //        Yrs.add("15");
 //        Yrs.add("Yrs - компании, которые платят дивиденды 15 и более лет");
 //        Yrs.add("GREATER_THAN_OR_EQUALS");
-        Yield.add("2.50");
-        Yield.add("Div.Yield - дивиденды от 2.5% годовых");
-        Yield.add("GREATER_THAN_OR_EQUALS");
+//        Yield.add("2.50");
+//        Yield.add("Div.Yield - дивиденды от 2.5% годовых");
+//        Yield.add("GREATER_THAN_OR_EQUALS");
         Payouts.add("4");
         Payouts.add("Payouts/Year - частота выплаты дивидендов - не реже 4 раз в год");
         Payouts.add("GREATER_THAN_OR_EQUALS");
@@ -230,18 +292,18 @@ public class DivsExcelData {
         MktCap.add("2000.00");
         MktCap.add("MktCap($Mil) - компании с капитализацией свыше 2млрд.долл");
         MktCap.add("GREATER_THAN_OR_EQUALS");
-        pe.add("21.00");
-        pe.add("TTM P/E - срок окупаемости инвестиций в акции компании в годах - для американского рынка не должен превышать 21");
-        pe.add("LESSER_THAN");
+//        pe.add("21.00");
+//        pe.add("TTM P/E - срок окупаемости инвестиций в акции компании в годах - для американского рынка не должен превышать 21");
+//        pe.add("LESSER_THAN");
         //заполняем хешмеп данными по критериям поиска по полям
 //        fieldsSearchCriterias.put("Yrs",Yrs);
-        fieldsSearchCriterias.put("Yield",Yield);
+//        fieldsSearchCriterias.put("Yield",Yield);
         fieldsSearchCriterias.put("Year",Payouts);
         fieldsSearchCriterias.put("Inc.",mr);
         fieldsSearchCriterias.put("Ex-Div",exDiv);
         fieldsSearchCriterias.put("Payout",EPS);
         fieldsSearchCriterias.put("($Mil)",MktCap);
-        fieldsSearchCriterias.put("P/E",pe);
+//        fieldsSearchCriterias.put("P/E",pe);
         //ищем строку с шапкой таблицы - названием полей
         logger.log(Level.INFO, "находим поля, по которым будет проводиться отбор компаний...");
         Cell numberOfYears = findCell(sheet,"Yrs");
@@ -455,7 +517,6 @@ public class DivsExcelData {
         Double yeild = currentRowYield.getNumericCellValue();
         String currentRowYieldVal = Double.toString(yeild);
         yieldsAndCompanies.put(currentRowNameVal,currentRowYieldVal);
-//        companyNames.add(currentRowNameVal);
     }
 
     public void setAutoFilter(XSSFSheet sheet, final int column, final String value) throws IOException, InvalidFormatException {
@@ -501,8 +562,8 @@ public class DivsExcelData {
 //        }
         // Now let's sort HashMap by keys first // all you need to do is create a TreeMap with mappings of HashMap
         // TreeMap keeps all entries in sorted order
-        TreeMap<String, String> sorted = new TreeMap<>(yieldsAndCompanies);
-        Set<Map.Entry<String, String>> mappings = sorted.entrySet();
+//        TreeMap<String, String> sorted = new TreeMap<>(yieldsAndCompanies);
+//        Set<Map.Entry<String, String>> mappings = sorted.entrySet();
 //        System.out.println("HashMap after sorting by keys in ascending order ");
 //        for(Map.Entry<String, String> mapping : mappings){
 //            System.out.println(mapping.getKey() + " ==> " + mapping.getValue());
