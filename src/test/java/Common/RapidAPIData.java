@@ -9,9 +9,10 @@ import com.mashape.unirest.http.HttpResponse;
 import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
 import org.apache.commons.io.FileUtils;
-import org.apache.poi.hpsf.Filetime;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.json.simple.parser.JSONParser;
+
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,6 +20,7 @@ import java.nio.file.Paths;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.text.DateFormat;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.logging.Level;
@@ -35,11 +37,48 @@ public class RapidAPIData {
     Double yieldValue,priceValue,peValue;
     Stocks stockObj;
     String stockObjFileName = Configuration.reportsFolder + "\\stockObj.json";
+    String NASDAQFileName = Configuration.reportsFolder + "\\symbol.json";
     String compName;
     public LinkedHashMap<String, Stocks> stocksListMap = new LinkedHashMap<>();
     ObjectMapper mapper = new ObjectMapper();
 
-    public boolean isDraftListCanBeReUsed() throws IOException {
+    public void getStocksListFromNASDQFile() {
+        ArrayList<String> nasdaqTickers = new ArrayList<>();
+        HttpResponse<JsonNode> response = null;
+        try {
+            response = Unirest.get("https://finnhub.io/api/v1/stock/symbol?exchange=US&token=bt2lnbv48v6sj2tj0vh0")
+//                    .header(rapidHost, rapidHostValue)
+//                    .header(rapidKey, rapidKeyValue)
+                    .asJson();
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой ");
+            e.printStackTrace();
+        }
+        JSONArray jsonArray = null;
+        try{
+            jsonArray = response.getBody().getArray();
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию");
+            e.printStackTrace();
+        }
+
+        JSONObject jsonObject = null;
+        for (int i=0; i < jsonArray.length();i++){
+            try {
+                jsonObject = jsonArray.getJSONObject(i);
+            } catch (Exception e) {
+                logger.log(Level.SEVERE, "ошибка");
+            }
+            String assetType = jsonObject.optString("type");
+            if (assetType.equals("EQS")){
+                String ticker = jsonObject.optString("symbol");
+                tickers.add(ticker);
+            }
+        }
+        logger.log(Level.INFO, "список тикеров считаны успешно");
+    }
+
+    public boolean isDraftListCanBeReUsed() throws IOException, ParseException {
         boolean flag = false;
         String fileName = Configuration.reportsFolder + "\\stockObj.json";
         File stocksFile = new File(fileName);
@@ -50,16 +89,20 @@ public class RapidAPIData {
             DateFormat dateFormat = new SimpleDateFormat("dd/MM/yyyy");
             Calendar cal = Calendar.getInstance();
             Date today = cal.getTime();
-            Long todaysTime = today.getTime();
-            Long fileModifyTime = modified.toMillis();
-//            if (fileModifyTime.compareTo(todaysTime) > 0)
-            if (stocksListMap.isEmpty()){
-                List<Stocks> myObjects = mapper.readValue(new File(stockObjFileName), new TypeReference<List<Stocks>>(){});
-                for (int i = 0; i < myObjects.size(); i++){
-                    String ticker = myObjects.get(i).getTicker();
-                    stocksListMap.put(ticker,myObjects.get(i));
+            Date fileModifiedDate = dateFormat.parse(dateFormat.format(modified.toMillis()));
+            Date todayDate = dateFormat.parse(dateFormat.format(today.getTime()));
+            int dev = fileModifiedDate.compareTo(todayDate);
+            //если файл был сгенерен сегодня, считываем его и пропускаем проверку по первым 8 критериям
+            //если файл был сгенерен не сегодня, заново выполняем все проверки по всем критериям
+            if (dev == 0){
+                if (stocksListMap.isEmpty()){
+                    List<Stocks> myObjects = mapper.readValue(new File(stockObjFileName), new TypeReference<List<Stocks>>(){});
+                    for (int i = 0; i < myObjects.size(); i++){
+                        String ticker = myObjects.get(i).getTicker();
+                        stocksListMap.put(ticker,myObjects.get(i));
+                    }
+                    flag = true;
                 }
-                flag = true;
             }
         }
         return  flag;
@@ -69,7 +112,6 @@ public class RapidAPIData {
         logger.log(Level.INFO, "фильтрация списка компаний:");
         logger.log(Level.INFO, "по величине дивидендов - от 2.5% годовых");
         logger.log(Level.INFO, "по P/E  - менее 21");
-        boolean flag = false;
         List<Stocks> listOfStocks = new ArrayList<>();
         for (int i = 0; i < tickers.size(); i++){
             String ticker = tickers.get(i);
@@ -85,29 +127,24 @@ public class RapidAPIData {
                 stockObj.setPE(peValue);
                 stockObj.setCompanyName(compName);
                 listOfStocks.add(stockObj);
+                stocksListMap.put(ticker,stockObj);
                 logger.log(Level.INFO, "Дивиденды компании " + ticker + " больше 2.5% - оставляем ее в выборке");
                 logger.log(Level.INFO, "P/E компании " + ticker + " меньше 21 - оставляем ее в выборке");
-//                ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
-//                String contents = ow.writeValueAsString(stockObj);
-//                FileUtils.write(new File(Configuration.reportsFolder + "\\stockObj.json"),contents,"UTF-8",true);
-//                tickersFiltered.add(ticker);
+                ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
+                String contents = ow.writeValueAsString(stockObj);
+                FileUtils.write(new File(Configuration.reportsFolder + "\\stockObj.json"),contents,"UTF-8",true);
             } else logger.log(Level.INFO, "Дивиденды и/или P/E компании " + ticker + " не соответствуют критериям - исключаем ее из выборки");
         }
-        //сортируем объекты по yield по убыванию
-        Collections.sort(listOfStocks);
-        Collections.reverse(listOfStocks);
-        //копируем данные объектов в хэшмап
-        for (int i = 0; i < listOfStocks.size(); i++){
-            String ticker = listOfStocks.get(i).getTicker();
-            stocksListMap.put(ticker,listOfStocks.get(i));
-        }
-        //сохраняем данные объектов в файле
-        mapper.enable(SerializationFeature.INDENT_OUTPUT);
-        mapper.writeValue(new File(stockObjFileName), listOfStocks);
-//        ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
-//        String contents = ow.writeValueAsString(stocksListMap);
-//        FileUtils.write(new File(Configuration.reportsFolder + "\\stockObj.json"),contents,"UTF-8",true);
-//        copyFilteredTickers(tickersFiltered);
+//        сортируем объекты по yield по убыванию
+//        Collections.sort(listOfStocks);
+//        Collections.reverse(listOfStocks);
+//        копируем данные объектов в хэшмап
+//        for (int i = 0; i < listOfStocks.size(); i++){
+//            String ticker = listOfStocks.get(i).getTicker();
+//            stocksListMap.put(ticker,listOfStocks.get(i));
+//        }
+//        mapper.enable(SerializationFeature.INDENT_OUTPUT);
+//        mapper.writeValue(new File(stockObjFileName), listOfStocks);
     }
 
     public boolean getStockStatsData(String ticker) {
@@ -140,7 +177,7 @@ public class RapidAPIData {
             ex1.printStackTrace();
             return false;
         }
-        compName = jsonObject2.getString("shortName");
+        compName = jsonObject2.optString("shortName");
 
         try {
             yield = jsonObject1.getJSONObject("trailingAnnualDividendYield");
@@ -150,7 +187,7 @@ public class RapidAPIData {
             return false;
         }
         if (yield == null) return false;
-        yieldValue = yield.getDouble("raw") * 100;
+        yieldValue = yield.optDouble("raw") * 100;
 
         try {
             closePrice = jsonObject1.getJSONObject("previousClose");
@@ -159,7 +196,7 @@ public class RapidAPIData {
             ex1.printStackTrace();
             return false;
         }
-        priceValue = closePrice.getDouble("raw");
+        priceValue = closePrice.optDouble("raw");
 
         try {
             pe = jsonObject1.getJSONObject("trailingPE");
@@ -169,8 +206,77 @@ public class RapidAPIData {
             ex.printStackTrace();
             return false;
         }
-        peValue = pe.getDouble("raw");
+        peValue = pe.optDouble("raw");
         return true;
+    }
+
+    public void sortStockList(){
+        LinkedHashMap<String, Integer> criteriaPassedMap = new LinkedHashMap<>();
+        LinkedHashMap<String, Integer> sortedStockMap = new LinkedHashMap<>();
+        LinkedHashMap<String, Stocks> copyOfStocksListMap = new LinkedHashMap<>();
+        //вычисляем кол-во успешно выполненных критериев по каждой компании
+        for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet()){
+            int countPassed = entry.getValue().calcCountOfPassedTests();
+            criteriaPassedMap.put(entry.getKey(),countPassed);
+        }
+        //сортируем по кол-ву успешно выполненных критериев - от самых лучших компаний к худшим
+        List<Map.Entry<String, Integer>> list = new ArrayList<Map.Entry<String, Integer>>(criteriaPassedMap.entrySet());
+        list.sort(Map.Entry.comparingByValue());
+        Collections.reverse(list);
+        //удаляем лишние компании из оставшегося списка
+        int stocksNumLimit = Integer.parseInt(props.maximumNumberOfStocks());
+        int delta = list.size() - stocksNumLimit;
+        int originalSize = list.size();
+        for (int i = 1; i< delta+1; i++){
+            list.remove(originalSize - i);
+        }
+//        LinkedHashMap<String, Double> yieldMap = new LinkedHashMap<>();
+//        LinkedHashMap<String, Double> sortedYieldMap = new LinkedHashMap<>();
+//        //сортируем по убыванию Yield для компаний с одинаковым количеством выполненных критериев
+//        for (int t=11; t > 7; t--){
+//            //вычисляем кол-во компаний с определенным числом выполненных критериев
+//            for(Map.Entry<String, Integer> entry : list){
+//                int criteria = entry.getValue();
+//                int criteriaCount = Collections.frequency(entry.getKey(), t);
+//            }
+//
+//
+//            int s = 0;
+//            for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet()){
+//                if (s < criteriaCount){
+//                    Double yield = entry.getValue().getYield();
+//                    yieldMap.put(entry.getKey(),yield);
+//                }
+//                s++;
+//            }
+//            //сортируем по Yield по убыванию
+//            List<Map.Entry<String, Double>> yieldList = new ArrayList<Map.Entry<String, Double>>(yieldMap.entrySet());
+//            yieldList.sort(Map.Entry.comparingByValue());
+//            Collections.reverse(yieldList);
+//            //конвертируем лист в хешмап
+//            for (Map.Entry<String, Double> entry : yieldList) {
+//                sortedYieldMap.put(entry.getKey(), entry.getValue());
+//            }
+//            //копируем объекты из оригинального хешмапа в урезанный и отсортированный список
+//            for (Map.Entry<String, Double> entry : sortedYieldMap.entrySet()){
+//                String key = entry.getKey();
+//                Stocks stocks = stocksListMap.get(key);
+//                copyOfStocksListMap.put(key,stocks);
+//            }
+//        }
+
+        //конвертируем лист в хешмап
+        for (Map.Entry<String, Integer> entry : list) {
+                sortedStockMap.put(entry.getKey(), entry.getValue());
+        }
+        //копируем объекты из оригинального хешмапа в урезанный и отсортированный список
+        for (Map.Entry<String, Integer> entry : sortedStockMap.entrySet()){
+            String key = entry.getKey();
+            Stocks stocks = stocksListMap.get(key);
+            copyOfStocksListMap.put(key,stocks);
+        }
+        stocksListMap.clear();
+        stocksListMap = (LinkedHashMap<String, Stocks>) copyOfStocksListMap.clone();
     }
 
     public void resetNoOfStocksToMaxLimit(){
@@ -215,9 +321,6 @@ public class RapidAPIData {
     }
 
     public boolean checkIncomeGrowth() {
-//        ArrayList<String> tickersFiltered = new ArrayList<String>();
-//        boolean isToContinue = DivsCoreData.shouldAnalysisContinue(tickersPreviousSelection,tickers);
-//        if (!isToContinue) return false;
         logger.log(Level.INFO, "метод проверяет актив на наличие поступательного роста показателей Net Income и Operating Income за 4 последних года");
         boolean flag = false;
         for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet()){

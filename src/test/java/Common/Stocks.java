@@ -1,7 +1,7 @@
 package Common;
 
-import java.util.HashMap;
-import java.util.LinkedHashMap;
+import java.util.*;
+
 import static Common.DivsCoreData.props;
 
 public class Stocks implements Comparable <Stocks>{
@@ -18,6 +18,15 @@ public class Stocks implements Comparable <Stocks>{
 
     public int compareTo(Stocks o) {
         return this.getYield().compareTo(o.getYield());
+    }
+
+    public int calcCountOfPassedTests(){
+        int count = 0;
+        for (Map.Entry<String, String> entry : criteriaExecutionStatuses.entrySet()){
+            String status = entry.getValue();
+            if (status.equals(props.testPassed())) count++;
+        }
+        return count;
     }
 
     public void setDefaultExecutionStatus() {

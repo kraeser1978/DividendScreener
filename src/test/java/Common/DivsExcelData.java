@@ -91,7 +91,6 @@ public class DivsExcelData {
         return newReportName;
     }
 
-
     public boolean filterCompanies(int Column, String searchCriteria,String criteriaDescription) throws ParseException {
         ArrayList<String> companyNamesFiltered = new ArrayList<String>();
         boolean isToContinue = DivsCoreData.shouldAnalysisContinue(companyNamesPreviousSelection,companyNames);
@@ -557,17 +556,10 @@ public class DivsExcelData {
             }
         }
         Set<Map.Entry<String, String>> entries = yieldsAndCompanies.entrySet();
-//        for(Map.Entry<String, String> entry : entries){
-//            System.out.println(entry.getKey() + " ==> " + entry.getValue());
-//        }
         // Now let's sort HashMap by keys first // all you need to do is create a TreeMap with mappings of HashMap
         // TreeMap keeps all entries in sorted order
-//        TreeMap<String, String> sorted = new TreeMap<>(yieldsAndCompanies);
-//        Set<Map.Entry<String, String>> mappings = sorted.entrySet();
-//        System.out.println("HashMap after sorting by keys in ascending order ");
-//        for(Map.Entry<String, String> mapping : mappings){
-//            System.out.println(mapping.getKey() + " ==> " + mapping.getValue());
-//        }
+        TreeMap<String, String> sorted = new TreeMap<>(yieldsAndCompanies);
+        Set<Map.Entry<String, String>> mappings = sorted.entrySet();
         // Now let's sort the HashMap by values
         // there is no direct way to sort HashMap by values but you
         // can do this by writing your own comparator, which takes
@@ -589,7 +581,6 @@ public class DivsExcelData {
             companyNames.add(entry.getKey());
             sortedByValue.put(entry.getKey(), entry.getValue());
         }
-//        logger.log(Level.INFO, "компании отфильтрованы по убыванию дивидендной доходности");
     }
 
     public XSSFSheet removeRows(XSSFSheet sheet, int startRow,int endRow){

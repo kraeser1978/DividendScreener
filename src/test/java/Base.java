@@ -86,6 +86,8 @@ public class Base {
         preparation();
         boolean criteriaStatus = false;
         rapidAPIData = new RapidAPIData();
+        rapidAPIData.getStocksListFromNASDQFile();
+        rapidAPIData.filterByDividendAndPE();
         boolean skipMajorTests = rapidAPIData.isDraftListCanBeReUsed();
         if (!skipMajorTests){
             HashMap<String,String> criteriaExecutionStatuses = new LinkedHashMap<>();
@@ -107,14 +109,16 @@ public class Base {
             rapidAPIData.tickers = divsExcelData.getCompaniesTickersByNames(companiesSheet,divsExcelData.companyNames);
             rapidAPIData.filterByDividendAndPE();
         }
-        criteriaStatus = rapidAPIData.compareStockAgainstEthalonETF();
-        criteriaStatus = rapidAPIData.checkDividendsGrowth();
-        criteriaStatus = rapidAPIData.checkIncomeGrowth();
+        rapidAPIData.compareStockAgainstEthalonETF();
+        rapidAPIData.checkDividendsGrowth();
+        rapidAPIData.checkIncomeGrowth();
         reportsGeneration2();
     }
 
-    public static void reportsGeneration2() throws IOException {
+    @Test
+    public static void reportsGeneration2() throws Exception {
         logger.log(Level.INFO, "формирование отчета с результатами отбора компаний...");
+        rapidAPIData.sortStockList();
         String excelReport = divsExcelData.generateExcelReport2(rapidAPIData.stocksListMap);
         Unirest.shutdown();
         logger.log(Level.INFO, "отчет сформирован в файле " + excelReport);
