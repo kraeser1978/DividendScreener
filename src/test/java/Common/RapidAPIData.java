@@ -9,10 +9,10 @@ import com.mashape.unirest.http.HttpResponse;
 import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
 import org.apache.commons.io.FileUtils;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.simple.parser.JSONParser;
-
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -41,6 +41,15 @@ public class RapidAPIData {
     String compName;
     public LinkedHashMap<String, Stocks> stocksListMap = new LinkedHashMap<>();
     ObjectMapper mapper = new ObjectMapper();
+
+    public void cleanUpNasdaqTickersLists(ArrayList<String> tickersFromExcel){
+        //метод отсеивает дубликаты тикеров из Finnhub файла и DripTools таблицы
+        for (int i=0; i<tickersFromExcel.size();i++){
+            String tickerFromExcel = tickersFromExcel.get(i);
+            if (tickers.contains(tickerFromExcel)) tickers.remove(tickerFromExcel);
+        }
+        logger.log(Level.INFO, "общий список тикеров очищен от тикеров из таблицы DripInvesting Tools");
+    }
 
     public void getStocksListFromNASDQFile() {
         ArrayList<String> nasdaqTickers = new ArrayList<>();

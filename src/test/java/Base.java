@@ -87,6 +87,8 @@ public class Base {
         boolean criteriaStatus = false;
         rapidAPIData = new RapidAPIData();
         rapidAPIData.getStocksListFromNASDQFile();
+        ArrayList<String> excelTickers = divsExcelData.getAllTickers(companiesSheet);
+        rapidAPIData.cleanUpNasdaqTickersLists(excelTickers);
         rapidAPIData.filterByDividendAndPE();
         boolean skipMajorTests = rapidAPIData.isDraftListCanBeReUsed();
         if (!skipMajorTests){

@@ -30,6 +30,24 @@ public class DivsExcelData {
     public HashMap<String,String> companyNamesAndTickers = new HashMap<>();
     HashMap<String,String> yieldsAndCompanies = new HashMap<>();
 
+    public ArrayList<String> getAllTickers(XSSFSheet sheet){
+        //метод считывает список всех тикеров компаний из файла Excel
+        ArrayList<String> tickersFromExcel = new ArrayList<>();
+        Cell ticker = findCell(sheet,"Symbol");
+        int symbolColumn = ticker.getColumnIndex();
+        int firstRowToStart = ticker.getRowIndex()+1;
+        int lastRowToEnd = findCell(sheet,"Averages for All").getRowIndex() - 2;
+        for (int i = firstRowToStart;i < lastRowToEnd;i++) {
+            XSSFRow row = sheet.getRow(i);
+            Cell currentTicker = row.getCell(symbolColumn);
+            CellType cellType = currentTicker.getCellType();
+            if (cellType.name() == "STRING") {
+                tickersFromExcel.add(currentTicker.getStringCellValue());
+            }
+        }
+        return tickersFromExcel;
+    }
+
     private void setStrValueToReportCell(Row row, int columnSeqNo, String value){
         Cell cell = row.getCell(columnSeqNo);
         if (cell == null) {
