@@ -86,11 +86,12 @@ public class Base {
         preparation();
         boolean criteriaStatus = false;
         rapidAPIData = new RapidAPIData();
-        rapidAPIData.getStocksListFromNASDQFile();
-        ArrayList<String> excelTickers = divsExcelData.getAllTickers(companiesSheet);
-        rapidAPIData.cleanUpNasdaqTickersLists(excelTickers);
-        rapidAPIData.filterByDividendAndPE();
+//        rapidAPIData.getStocksListFromFinnhub();
+//        ArrayList<String> excelTickers = divsExcelData.getAllTickers(companiesSheet);
+//        rapidAPIData.cleanUpUSMarketsTickersLists(excelTickers);
+//        rapidAPIData.filterBySummaryDetails();
         boolean skipMajorTests = rapidAPIData.isDraftListCanBeReUsed();
+        rapidAPIData.filterByDividendRelatedCriterias();
         if (!skipMajorTests){
             HashMap<String,String> criteriaExecutionStatuses = new LinkedHashMap<>();
             criteriaExecutionStatuses = divsExcelData.setDefaultExecutionStatus(props.notTested());
@@ -109,7 +110,7 @@ public class Base {
                 else criteriaExecutionStatuses.put(key,props.testFailed());
             }
             rapidAPIData.tickers = divsExcelData.getCompaniesTickersByNames(companiesSheet,divsExcelData.companyNames);
-            rapidAPIData.filterByDividendAndPE();
+            rapidAPIData.filterBySummaryDetails();
         }
         rapidAPIData.compareStockAgainstEthalonETF();
         rapidAPIData.checkDividendsGrowth();

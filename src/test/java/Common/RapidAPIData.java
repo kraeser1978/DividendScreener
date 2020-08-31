@@ -34,15 +34,165 @@ public class RapidAPIData {
     final String API_URL = props.APIURL();final String rapidHost = props.rapidHost();final String rapidHostValue = props.rapidHostValue();
     final String rapidKey = props.rapidKey();final String rapidKeyValue = props.rapidKeyValue();
     public ArrayList<String> uniqueTickers = new ArrayList<String>();
-    Double yieldValue,priceValue,peValue;
+    Double yieldValue,priceValue,peValue,payoutRatioValue;
+    Long marketCapValue;
     Stocks stockObj;
     String stockObjFileName = Configuration.reportsFolder + "\\stockObj.json";
-    String NASDAQFileName = Configuration.reportsFolder + "\\symbol.json";
     String compName;
     public LinkedHashMap<String, Stocks> stocksListMap = new LinkedHashMap<>();
     ObjectMapper mapper = new ObjectMapper();
+    ArrayList<Long> dividendDates = new ArrayList<>();
+    ArrayList<Double> dividendAmount = new ArrayList<>();
 
-    public void cleanUpNasdaqTickersLists(ArrayList<String> tickersFromExcel){
+
+    public boolean getDividendHistoryData2(String startDate, String endDate, String ticker) {
+        logger.log(Level.INFO, "считываем дивиденды по " + ticker + " за последние 15 лет...");
+        HttpResponse<JsonNode> response = null;
+        try {
+            response = Unirest.get(API_URL + "/stock/v2/get-historical-data?frequency=1wk&filter=div" +
+                    "&period1=" + startDate + "&period2=" + endDate + "&symbol=" + ticker)
+                    .header(rapidHost, rapidHostValue)
+                    .header(rapidKey, rapidKeyValue)
+                    .asJson();
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            return false;
+        }
+        logger.log(Level.INFO, "запрос успешно отработал");
+        JSONArray eventsDataArray = null;
+        JSONObject jObject = null;
+        try {
+            eventsDataArray = response.getBody().getObject().getJSONArray("eventsData");
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "дивиденды по компании " + ticker + " не были загружены, пропускаем ее...");
+            return false;
+        }
+        for (int i=0; i < eventsDataArray.length();i++){
+            try {
+                jObject = eventsDataArray.getJSONObject(i);
+            } catch (Exception e) {
+                logger.log(Level.SEVERE, "дивиденды по компании " + ticker + " не были загружены, пропускаем ее...");
+                return false;
+            }
+            Long dateValue = jObject.optLong("date");
+            dividendDates.add(dateValue);
+            Double divValue = jObject.optDouble("amount");
+            dividendAmount.add(divValue);
+        }
+        return true;
+    }
+
+    public boolean isDividendPaidOffFor15Years(String ticker){
+        boolean flag = false;
+        int isDividend15Years = dividendDates.size();
+        if (isDividend15Years < 60) {
+            logger.log(Level.INFO, "компания " + ticker + " выплачивала дивиденды меньше 15 лет подряд - исключаем ее из выборки...");
+            stocksListMap.get(ticker).changeCriteriaExecutionStatus("Yrs",props.testFailed());
+            flag = false;
+        } else flag = true;
+        return flag;
+    }
+
+    public boolean isDividendGrewFor10Years(String ticker){
+        logger.log(Level.INFO, "метод проверяет актив на наличие поступательного роста его дивидендов в течение 10 прошедших лет");
+        boolean flag = false;
+        LinkedHashMap<String, Stocks> copyOfStocksListMap = new LinkedHashMap<>();
+        ArrayList<Double> dividends10Years = new ArrayList<>();
+        for (int i=0; i< 41;i++) dividends10Years.add(dividendAmount.get(i));
+        logger.log(Level.INFO, "выполняем проверку на то, что дивиденды за последние 10 лет поступательно росли...");
+        flag = compareCompanyQuotes(dividends10Years);
+        if (flag) {
+            logger.log(Level.INFO, "размер дивиденда компании " + ticker + " поступательно рос все время в течение последних 10 лет");
+            stocksListMap.get(ticker).changeCriteriaExecutionStatus("Yrs",props.testPassed());
+            stocksListMap.get(ticker).changeCriteriaExecutionStatus("DivCheck",props.testPassed());
+            copyOfStocksListMap.put(ticker,stocksListMap.get(ticker));
+        } else {
+            logger.log(Level.INFO, "размер дивиденда компании " + ticker + " в течение последних 10 лет некоторое время снижался");
+            stocksListMap.get(ticker).changeCriteriaExecutionStatus("Yrs",props.testPassed());
+            stocksListMap.get(ticker).changeCriteriaExecutionStatus("DivCheck",props.testFailed());
+            copyOfStocksListMap.put(ticker,stocksListMap.get(ticker));
+        }
+        stocksListMap.clear();
+        stocksListMap = (LinkedHashMap<String, Stocks>) copyOfStocksListMap.clone();
+        return flag;
+    }
+
+    public boolean isDivPayoutFrequencyAcceptable(){
+        //метод проверяет частоту последних дивидендных выплат - не реже 4 раз в год
+        boolean flag = false;
+        Long lastDate = dividendDates.get(0);
+        Long lastFifthDate = dividendDates.get(4);
+        Calendar c1 = Calendar.getInstance();
+        c1.setTimeInMillis(lastDate * 1000);
+        Calendar c2 = Calendar.getInstance();
+        c2.setTimeInMillis(lastFifthDate * 1000);
+        int lastDateYear = c1.get(Calendar.YEAR);
+        int lastDateMonth = c1.get(Calendar.MONTH);
+        int fifthDateYear = c2.get(Calendar.YEAR);
+        int fifthDateMonth = c2.get(Calendar.MONTH);
+        if (lastDateYear != fifthDateYear){
+            if (lastDateMonth != fifthDateMonth) flag = false;
+            else flag = true;
+        }
+        return flag;
+    }
+
+    public boolean isDivGrowthRateAcceptable(){
+        //метод проверяет рост дивидендных выплат - не менее 2% раз в год
+        boolean flag = false;
+        for (int i = 1; i < dividendAmount.size(); i++){
+            double currentValue = dividendAmount.get(i-1);
+            double nextValue = dividendAmount.get(i);
+            if (nextValue < currentValue) {
+                double diff = (currentValue - nextValue) / nextValue * 100;
+                if (diff < 2) flag = false;
+                else flag = true;
+                break;
+            }
+        }
+        return flag;
+    }
+
+    public boolean isDivLastIncreasedDateAcceptable(){
+        //метод проверяет дату последнего повышения дивидендов - не позже, чем год назад
+        boolean flag = false;
+        Calendar yearAgo = Calendar.getInstance();
+        yearAgo.add(Calendar.YEAR,-1);
+        Date expectedDate = yearAgo.getTime();
+        Calendar c2 = Calendar.getInstance();
+        for (int i = 1; i < dividendAmount.size(); i++){
+            double currentValue = dividendAmount.get(i-1);
+            double nextValue = dividendAmount.get(i);
+            if (nextValue < currentValue) {
+                Long divLastIncreased = dividendDates.get(i-1);
+                c2.setTimeInMillis(divLastIncreased * 1000);
+                Date actualDate = c2.getTime();
+                int diff = actualDate.compareTo(expectedDate);
+                if (diff <= 0) flag = false;
+                else flag = true;
+                break;
+            }
+        }
+        return flag;
+    }
+
+    public boolean filterByDividendRelatedCriterias() {
+        String startDate = getDateAsEpoch(Calendar.YEAR,-15);
+        String endDate = getDateAsEpoch(Calendar.YEAR,0);
+        boolean flag = false;
+        for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet()){
+            String ticker = entry.getKey();
+            if (!getDividendHistoryData2(startDate,endDate,ticker)) continue;
+            if (!isDividendPaidOffFor15Years(ticker)) continue;
+            if (!isDivPayoutFrequencyAcceptable()) continue;
+            if (isDivGrowthRateAcceptable()) continue;
+            if (!isDivLastIncreasedDateAcceptable()) continue;
+            isDividendGrewFor10Years(ticker);
+        }
+        return true;
+    }
+
+    public void cleanUpUSMarketsTickersLists(ArrayList<String> tickersFromExcel){
         //метод отсеивает дубликаты тикеров из Finnhub файла и DripTools таблицы
         for (int i=0; i<tickersFromExcel.size();i++){
             String tickerFromExcel = tickersFromExcel.get(i);
@@ -51,7 +201,7 @@ public class RapidAPIData {
         logger.log(Level.INFO, "общий список тикеров очищен от тикеров из таблицы DripInvesting Tools");
     }
 
-    public void getStocksListFromNASDQFile() {
+    public void getStocksListFromFinnhub() {
         ArrayList<String> nasdaqTickers = new ArrayList<>();
         HttpResponse<JsonNode> response = null;
         try {
@@ -117,10 +267,12 @@ public class RapidAPIData {
         return  flag;
     }
 
-    public void filterByDividendAndPE() throws IOException {
+    public void filterBySummaryDetails() throws IOException {
         logger.log(Level.INFO, "фильтрация списка компаний:");
         logger.log(Level.INFO, "по величине дивидендов - от 2.5% годовых");
         logger.log(Level.INFO, "по P/E  - менее 21");
+        logger.log(Level.INFO, "по Payout Ratio  - доля прибыли, направляемая на выплату дивидендов - не более 70%");
+        logger.log(Level.INFO, "по marketCap  - от 2 млрд.долл.");
         List<Stocks> listOfStocks = new ArrayList<>();
         for (int i = 0; i < tickers.size(); i++){
             String ticker = tickers.get(i);
@@ -128,7 +280,7 @@ public class RapidAPIData {
             boolean isDataAvailable = getStockStatsData(ticker);
             //если каких-то данных не хватает, пропускаем тикер
             if (!isDataAvailable) continue;
-            if (yieldValue >= 2.5 && peValue < 21) {
+            if (yieldValue >= 2.5 && peValue < 21 && payoutRatioValue < 70 && marketCapValue > 2000000000) {
                 stockObj = new Stocks();
                 stockObj.setTicker(ticker);
                 stockObj.setYield(yieldValue);
@@ -139,9 +291,9 @@ public class RapidAPIData {
                 stocksListMap.put(ticker,stockObj);
                 logger.log(Level.INFO, "Дивиденды компании " + ticker + " больше 2.5% - оставляем ее в выборке");
                 logger.log(Level.INFO, "P/E компании " + ticker + " меньше 21 - оставляем ее в выборке");
-                ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
-                String contents = ow.writeValueAsString(stockObj);
-                FileUtils.write(new File(Configuration.reportsFolder + "\\stockObj.json"),contents,"UTF-8",true);
+//                ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
+//                String contents = ow.writeValueAsString(stockObj);
+//                FileUtils.write(new File(Configuration.reportsFolder + "\\stockObj.json"),contents,"UTF-8",true);
             } else logger.log(Level.INFO, "Дивиденды и/или P/E компании " + ticker + " не соответствуют критериям - исключаем ее из выборки");
         }
 //        сортируем объекты по yield по убыванию
@@ -152,8 +304,8 @@ public class RapidAPIData {
 //            String ticker = listOfStocks.get(i).getTicker();
 //            stocksListMap.put(ticker,listOfStocks.get(i));
 //        }
-//        mapper.enable(SerializationFeature.INDENT_OUTPUT);
-//        mapper.writeValue(new File(stockObjFileName), listOfStocks);
+        mapper.enable(SerializationFeature.INDENT_OUTPUT);
+        mapper.writeValue(new File(stockObjFileName), listOfStocks);
     }
 
     public boolean getStockStatsData(String ticker) {
@@ -168,7 +320,7 @@ public class RapidAPIData {
             e.printStackTrace();
             return false;
         }
-        JSONObject yield,closePrice,pe,jsonObject1,jsonObject2;
+        JSONObject yield,closePrice,pe,jsonObject1,jsonObject2,payoutRatio,marketCap;
         logger.log(Level.INFO, "запрос успешно отработал");
 
         try{
@@ -189,7 +341,7 @@ public class RapidAPIData {
         compName = jsonObject2.optString("shortName");
 
         try {
-            yield = jsonObject1.getJSONObject("trailingAnnualDividendYield");
+            yield = jsonObject1.getJSONObject("dividendYield");
         } catch (Exception ex1) {
             logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
             ex1.printStackTrace();
@@ -216,6 +368,26 @@ public class RapidAPIData {
             return false;
         }
         peValue = pe.optDouble("raw");
+
+        try {
+            payoutRatio = jsonObject1.getJSONObject("payoutRatio");
+
+        } catch (Exception ex) {
+            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            ex.printStackTrace();
+            return false;
+        }
+        payoutRatioValue = payoutRatio.optDouble("raw") * 100;
+
+        try {
+            marketCap = jsonObject1.getJSONObject("marketCap");
+
+        } catch (Exception ex) {
+            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            ex.printStackTrace();
+            return false;
+        }
+        marketCapValue = marketCap.optLong("raw");
         return true;
     }
 
