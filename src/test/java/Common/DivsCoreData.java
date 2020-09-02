@@ -44,7 +44,6 @@ public class DivsCoreData {
     protected static WebDriver driver;
     static FileHandler fh = null;
     public static Props props;
-    public static String email = "DividendAutoScreener@yandex.ru";
 
     public ArrayList<String> getActiveUsersEmailList(){
         logger.log(Level.INFO, "Формируем список емейлов активных пользователей...");
@@ -155,7 +154,7 @@ public class DivsCoreData {
 
     }
 
-    public static boolean checkUserIsEnabled(){
+    public boolean checkUserIsEnabled(){
         boolean isUserEnabled =  false;
         String pclistFileName = Configuration.reportsFolder + "\\pclist.txt";
         String fileContents = null;
@@ -163,7 +162,7 @@ public class DivsCoreData {
         try {
             fileContents = FileUtils.readFileToString(new File(pclistFileName), "UTF-8");
         } catch (IOException e) {
-            logger.log(Level.INFO,"Ошибка при считывании файла дат. Обратитесь к разработчику по email: " + email);
+            logger.log(Level.INFO,"Ошибка при считывании файла дат. Обратитесь к разработчику по email: " + props.gmailUsername());
             e.printStackTrace();
         }
         //считываем список компьютеров пользователей и их конечные даты абонентской платы по пользователям
@@ -171,7 +170,7 @@ public class DivsCoreData {
         try {
             pclist.load(new StringReader(fileContents));
         } catch (IOException e) {
-            logger.log(Level.INFO,"Ошибка при разборе данных из файла дат. Обратитесь к разработчику по email: " + email);
+            logger.log(Level.INFO,"Ошибка при разборе данных из файла дат. Обратитесь к разработчику по email: " + props.gmailUsername());
             e.printStackTrace();
         }
         Date userEndLicense =  null;
@@ -188,7 +187,7 @@ public class DivsCoreData {
             try {
                 userEndLicense = new SimpleDateFormat("dd/MM/yyyy").parse(dateFromFile);
             } catch (ParseException e) {
-                logger.log(Level.INFO,"Ошибка при конвертации даты из файла. Обратитесь к разработчику по email: " + email);
+                logger.log(Level.INFO,"Ошибка при конвертации даты из файла. Обратитесь к разработчику по email: " + props.gmailUsername());
                 e.printStackTrace();
             }
             //сравниваем дату окончания абонентской платы с текущей
@@ -198,7 +197,7 @@ public class DivsCoreData {
             else {
                 String userEndLicenseStr = dateFormat.format(userEndLicense) + "г.";
                 logger.log(Level.INFO, "Ваша подписка неактивна и была завершена " + userEndLicenseStr + " Необходимо продлить подписку на приложение. ");
-                logger.log(Level.INFO,"Пожалуйста свяжитесь с разработчиком по email: " + email);
+                logger.log(Level.INFO,"Пожалуйста свяжитесь с разработчиком по email: " + props.gmailUsername());
                 isUserEnabled = false;
             }
         }
@@ -215,18 +214,18 @@ public class DivsCoreData {
                 //загружаем обновленный файл с именем компьютера нового пользователя
                 uploadFileToDisk();
                 logger.log(Level.INFO, "Ваша подписка на приложение ранее не была оформлена. Вам предоставляется 7 дневный пробный период использования приложения. ");
-                logger.log(Level.INFO,"По истечении пробного периода для оформления подписки пожалуйста свяжитесь с разработчиком по email: " + email);
+                logger.log(Level.INFO,"По истечении пробного периода для оформления подписки пожалуйста свяжитесь с разработчиком по email: " + props.gmailUsername());
                 pressEnterToContinue();
             } catch (IOException e) {
                 e.printStackTrace();
-                logger.log(Level.INFO,"Ошибка сохранения нового пользователя. Обратитесь к разработчику по email: " + email);
+                logger.log(Level.INFO,"Ошибка сохранения нового пользователя. Обратитесь к разработчику по email: " + props.gmailUsername());
             }
             isUserEnabled =  true;
         }
         return isUserEnabled;
     }
 
-    private static void pressEnterToContinue()
+    private void pressEnterToContinue()
     {
         System.out.println("Для продолжения работы нажмите клавишу Enter...");
         try
@@ -237,7 +236,7 @@ public class DivsCoreData {
         {}
     }
 
-    public static void fileDownload() throws IOException {
+    public void fileDownload() throws IOException {
         String diskAPI_URL = props.diskAPIURL();
         String OAuthKey = props.OAuthKey();
         HttpResponse<JsonNode> response1 = null;
@@ -276,7 +275,7 @@ public class DivsCoreData {
         }
     }
 
-    public static void uploadFileToDisk() throws IOException {
+    public void uploadFileToDisk() throws IOException {
         String diskAPI_URL = props.diskAPIURL();
         String OAuthKey = props.OAuthKey();
         HttpResponse<JsonNode> response1 = null;
@@ -329,7 +328,7 @@ public class DivsCoreData {
         }
     }
 
-    public static boolean shouldAnalysisContinue(ArrayList<String> previousSelection, ArrayList<String> currentSelection){
+    public boolean shouldAnalysisContinue(ArrayList<String> previousSelection, ArrayList<String> currentSelection){
         boolean flag = true;
         //продолжаем, если текущая выборка еще не заполнена
         if (currentSelection.size() == 0) return true;
@@ -341,7 +340,7 @@ public class DivsCoreData {
         return flag;
     }
 
-    public static void SetUp() throws Exception {
+    public void SetUp() throws Exception {
         logger.log(Level.INFO,"считываем параметры проекта из properties файлов...");
 //        String path = Base.class.getProtectionDomain().getCodeSource().getLocation().getPath();
 //        String decodedPath = URLDecoder.decode(path,"UTF-8");
@@ -390,7 +389,7 @@ public class DivsCoreData {
 //        WebDriverRunner.setWebDriver(driver);
     }
 
-    public static void tearDown(){
+    public void tearDown(){
         if (!driver.getWindowHandle().equals("")) {
             fh.flush();
             fh.close();
@@ -399,7 +398,7 @@ public class DivsCoreData {
         }
     }
 
-    public static void logInit(String lofFileName){
+    public void logInit(String lofFileName){
         try {
             fh = new FileHandler(lofFileName,true);
         } catch (IOException e) {
@@ -411,7 +410,7 @@ public class DivsCoreData {
         log.setLevel(Level.CONFIG);
     }
 
-    public static void downloadDivsFile() throws IOException, URISyntaxException {
+    public void downloadDivsFile() throws IOException, URISyntaxException {
         String downloadedName = Configuration.reportsFolder + "\\USDividendChampions";
         File downloadedXlsFile = new File(downloadedName + ".xlsx");
         File downloadedFile = new File(downloadedName);

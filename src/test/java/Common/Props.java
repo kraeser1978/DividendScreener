@@ -101,4 +101,23 @@ public class Props {
         return properties.getProperty("not_tested");
     }
 
+    public String allUSMarketsSourceFile(){
+        return properties.getProperty("all_us_markets_source_list_file_short_name");
+    }
+
+    public String excelSourceFile(){
+        return properties.getProperty("excel_source_list_file_short_name");
+    }
+
+    public String allUSMarketsFilteredFile(){
+        return properties.getProperty("all_us_markets_filtered_list_file_short_name");
+    }
+
+    public String excelFilteredFile(){
+        return properties.getProperty("excel_filtered_list_short_name");
+    }
+
+    public String finnhubToken(){
+        return properties.getProperty("Finnhub_token");
+    }
 }

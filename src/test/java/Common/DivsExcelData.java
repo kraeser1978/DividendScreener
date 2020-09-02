@@ -111,7 +111,8 @@ public class DivsExcelData {
 
     public boolean filterCompanies(int Column, String searchCriteria,String criteriaDescription) throws ParseException {
         ArrayList<String> companyNamesFiltered = new ArrayList<String>();
-        boolean isToContinue = DivsCoreData.shouldAnalysisContinue(companyNamesPreviousSelection,companyNames);
+        DivsCoreData divsCoreData = new DivsCoreData();
+        boolean isToContinue = divsCoreData.shouldAnalysisContinue(companyNamesPreviousSelection,companyNames);
         if (!isToContinue) return false;
         logger.log(Level.INFO,criteriaDescription);
         XSSFRow row = null; double expectedValue = 0,currentValue = 0; Date currentDate,expectedDate;

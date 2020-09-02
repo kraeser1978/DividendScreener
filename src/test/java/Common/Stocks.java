@@ -33,13 +33,13 @@ public class Stocks implements Comparable <Stocks>{
         boolean isMapEmpty = criteriaExecutionStatuses.isEmpty();
         if (isMapEmpty){
             criteriaExecutionStatuses.put("Yrs", props.testPassed());
-            criteriaExecutionStatuses.put("Yield", props.testPassed());
-            criteriaExecutionStatuses.put("Year", props.testPassed());
-            criteriaExecutionStatuses.put("Inc.", props.testPassed());
-            criteriaExecutionStatuses.put("Ex-Div", props.testPassed());
-            criteriaExecutionStatuses.put("Payout", props.testPassed());
+            criteriaExecutionStatuses.put("Yield", props.notTested());
+            criteriaExecutionStatuses.put("Year", props.notTested());
+            criteriaExecutionStatuses.put("Inc.", props.notTested());
+            criteriaExecutionStatuses.put("Ex-Div", props.notTested());
+            criteriaExecutionStatuses.put("Payout", props.notTested());
             criteriaExecutionStatuses.put("($Mil)", props.testPassed());
-            criteriaExecutionStatuses.put("P/E", props.testPassed());
+            criteriaExecutionStatuses.put("P/E", props.notTested());
             criteriaExecutionStatuses.put("SDYCheck", props.notTested());
             criteriaExecutionStatuses.put("DivCheck", props.notTested());
             criteriaExecutionStatuses.put("IncomeCheck", props.notTested());
