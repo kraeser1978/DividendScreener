@@ -25,9 +25,9 @@ public class Base {
     @Test
     public void main() throws Exception {
         preparation();
-        rapidAPIData = new RapidAPIData();
-        rapidAPIData.test();
-        excelDataFiltering();
+//        rapidAPIData = new RapidAPIData();
+//        rapidAPIData.test();
+//        excelDataFiltering();
         allUSMarketsDataFiltering();
         reportsGeneration();
     }

@@ -49,13 +49,16 @@ public class RapidAPIData {
     ArrayList<HttpResponse> responses = new ArrayList<>();
     CountDownLatch responseWaiter;
 
-    private void runAsyncRequest(String requestCommand){
+    private boolean runAsyncRequest(String requestCommand){
+        boolean flag = false;
+        int elementsCount = responses.size();
         Future < HttpResponse < JsonNode >  > future1 = Unirest.get(API_URL + requestCommand)
                 .header(rapidHost, rapidHostValue)
                 .header(rapidKey, rapidKeyValue)
                 .asJsonAsync(new Callback < JsonNode > () {
                     public void failed(UnirestException e) {
                         logger.log(Level.SEVERE, "запросы выдал ошибку");
+                        responseWaiter.countDown();
                     }
                     public void completed(HttpResponse < JsonNode > response) {
                         responses.add(response);
@@ -63,8 +66,13 @@ public class RapidAPIData {
                     }
                     public void cancelled() {
                         logger.log(Level.SEVERE, "запрос отменен");
+                        responseWaiter.countDown();
                     }
                 });
+        int countAfter = responses.size();
+        if (elementsCount == countAfter) flag = false;
+        if (countAfter > elementsCount ) flag = true;
+        return flag;
     }
 
     public void test(){
@@ -351,38 +359,89 @@ public class RapidAPIData {
         FileUtils.write(new File(fileName),newContents,"UTF-8",false);
     }
 
-    public void filterBySummaryDetails(String fileName) throws IOException {
-        String fullFileName = Configuration.reportsFolder + fileName;
+    public void getAsyncData(String request, int i, int maxCount) throws InterruptedException {
+        for (int t = i; t < maxCount; t++){
+            String ticker = tickers.get(t);
+            logger.log(Level.INFO, "считываем рыночные данные по " + ticker + " ...");
+            String requestText = request + ticker;
+            runAsyncRequest(requestText);
+        }
+        responseWaiter.await();
+        responseWaiter = new CountDownLatch(0);
+    }
+
+    public Stocks addStockAsObj(String ticker){
+        stockObj = new Stocks();
+        stockObj.setTicker(ticker);
+        stockObj.setYield(yieldValue);
+        stockObj.setLastPrice(priceValue);
+        stockObj.setPE(peValue);
+        stockObj.setCompanyName(compName);
+        stockObj.changeCriteriaExecutionStatus("Yield",props.testPassed());
+        stockObj.changeCriteriaExecutionStatus("Year",props.testPassed());
+        stockObj.changeCriteriaExecutionStatus("Inc.",props.testPassed());
+        stockObj.changeCriteriaExecutionStatus("Ex-Div",props.testPassed());
+        stockObj.changeCriteriaExecutionStatus("Payout",props.testPassed());
+        stockObj.changeCriteriaExecutionStatus("P/E",props.testPassed());
+        listOfStocks.add(stockObj);
+        logger.log(Level.INFO, "компания " + ticker + " соответствует вышеуказанным критериям - оставляем ее в выборке");
+        return stockObj;
+    }
+
+    public LinkedHashMap<String, Stocks> parseAsyncData(int startItem, int endItem){
+        LinkedHashMap<String, Stocks> copyOfStocksListMap = new LinkedHashMap<>();
+        for (int i = startItem; i < endItem; i++) {
+            String ticker = tickers.get(i);
+            if (responses.size() < i+1) continue;
+            parseStockStaticData(responses.get(i),ticker);
+            if (yieldValue >= 2.5 && peValue < 21 && payoutRatioValue < 70 && marketCapValue > 2000000000) {
+                stockObj = addStockAsObj(ticker);
+                copyOfStocksListMap.put(ticker,stockObj);
+            } else logger.log(Level.INFO, "компания " + ticker + " не соответствует одному или нескольким вышеуказанным критериям - исключаем ее из выборки");
+        }
+        return copyOfStocksListMap;
+    }
+
+    public void filterBySummaryDetails(String fileName) throws IOException, InterruptedException {
+        String fullFileName = Configuration.reportsFolder + fileName;String ticker = null;
         LinkedHashMap<String, Stocks> copyOfStocksListMap = new LinkedHashMap<>();
         logger.log(Level.INFO, "фильтрация списка компаний:");
         logger.log(Level.INFO, "по величине дивидендов - от 2.5% годовых");
         logger.log(Level.INFO, "по P/E  - менее 21");
         logger.log(Level.INFO, "по Payout Ratio  - доля прибыли, направляемая на выплату дивидендов - не более 70%");
         logger.log(Level.INFO, "по marketCap  - от 2 млрд.долл.");
-        for (int i = 0; i < tickers.size(); i++){
-            String ticker = tickers.get(i);
-            logger.log(Level.INFO, "считываем рыночные данные по " + ticker + " ...");
-            boolean isDataAvailable = getStockStatsData(ticker);
-            //если каких-то данных не хватает, пропускаем тикер
-            if (!isDataAvailable) continue;
+        int cycles = tickers.size() / 5;
+        int remainder = tickers.size() - (cycles * 5);
+        int roundSize = tickers.size() - remainder;
+        for (int i = 0; i < roundSize; i+=5) { //обработка списка тикеров общим числом кратным 5
+            responseWaiter = new CountDownLatch(5);
+            getAsyncData("/stock/v2/get-statistics?region=US&symbol=",i,i+5);
+            for (int t = i; t < i+5; t++) {
+                ticker = tickers.get(t);
+                if (responses.size() < t+1) continue;
+                parseStockStaticData(responses.get(t),ticker);
+                if (yieldValue >= 2.5 && peValue < 21 && payoutRatioValue < 70 && marketCapValue > 2000000000) {
+                    stockObj = addStockAsObj(ticker);
+                    copyOfStocksListMap.put(ticker,stockObj);
+                } else logger.log(Level.INFO, "компания " + ticker + " не соответствует одному или нескольким вышеуказанным критериям - исключаем ее из выборки");
+            }
+        }
+        responseWaiter = new CountDownLatch(remainder);//обработка остатка (последняя партия тикеров меньше 5)
+        getAsyncData("/stock/v2/get-statistics?region=US&symbol=", roundSize,tickers.size());
+        for (int i = roundSize; i < tickers.size(); i++) {
+            ticker = tickers.get(i);
+            if (responses.size() < i+1) continue;
+            parseStockStaticData(responses.get(i),ticker);
             if (yieldValue >= 2.5 && peValue < 21 && payoutRatioValue < 70 && marketCapValue > 2000000000) {
-                stockObj = new Stocks();
-                stockObj.setTicker(ticker);
-                stockObj.setYield(yieldValue);
-                stockObj.setLastPrice(priceValue);
-                stockObj.setPE(peValue);
-                stockObj.setCompanyName(compName);
-                stockObj.changeCriteriaExecutionStatus("Yield",props.testPassed());
-                stockObj.changeCriteriaExecutionStatus("Year",props.testPassed());
-                stockObj.changeCriteriaExecutionStatus("Inc.",props.testPassed());
-                stockObj.changeCriteriaExecutionStatus("Ex-Div",props.testPassed());
-                stockObj.changeCriteriaExecutionStatus("Payout",props.testPassed());
-                stockObj.changeCriteriaExecutionStatus("P/E",props.testPassed());
-                listOfStocks.add(stockObj);
+                stockObj = addStockAsObj(ticker);
                 copyOfStocksListMap.put(ticker,stockObj);
-                logger.log(Level.INFO, "компания " + ticker + " соответствует вышеуказанным критериям - оставляем ее в выборке");
             } else logger.log(Level.INFO, "компания " + ticker + " не соответствует одному или нескольким вышеуказанным критериям - исключаем ее из выборки");
         }
+//            String ticker = tickers.get(i);
+//            logger.log(Level.INFO, "считываем рыночные данные по " + ticker + " ...");
+//            boolean isDataAvailable = getStockStatsData(ticker);
+            //если каких-то данных не хватает, пропускаем тикер
+//            if (!isDataAvailable) continue;
 //        сортируем объекты по yield по убыванию
 //        Collections.sort(listOfStocks);
 //        Collections.reverse(listOfStocks);
