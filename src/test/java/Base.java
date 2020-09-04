@@ -25,8 +25,6 @@ public class Base {
     @Test
     public void main() throws Exception {
         preparation();
-//        rapidAPIData = new RapidAPIData();
-//        rapidAPIData.test();
 //        excelDataFiltering();
         allUSMarketsDataFiltering();
         reportsGeneration();
@@ -81,7 +79,7 @@ public class Base {
                 else criteriaExecutionStatuses.put(key,props.testFailed());
             }
             rapidAPIData.tickers = divsExcelData.getCompaniesTickersByNames(companiesSheet,divsExcelData.companyNames);
-            rapidAPIData.filterBySummaryDetails(props.excelFilteredFile());
+            rapidAPIData.filterBySummaryDetails(props.excelSourceFile());
         }
         rapidAPIData.compareStockAgainstEthalonETF();
         rapidAPIData.checkDividendsGrowth();
@@ -103,7 +101,6 @@ public class Base {
         rapidAPIData.filterByDividendRelatedCriterias();
         rapidAPIData.compareStockAgainstEthalonETF();
         rapidAPIData.checkIncomeGrowth();
-        reportsGeneration();
     }
 
     public void reportsGeneration() throws Exception {

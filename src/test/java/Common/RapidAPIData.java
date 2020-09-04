@@ -5,7 +5,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.mashape.unirest.http.Headers;
 import com.mashape.unirest.http.HttpResponse;
 import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
@@ -14,6 +13,7 @@ import com.mashape.unirest.http.exceptions.UnirestException;
 import org.apache.commons.io.FileUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;
+
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,19 +40,19 @@ public class RapidAPIData {
     Double yieldValue,priceValue,peValue,payoutRatioValue;
     Long marketCapValue;
     Stocks stockObj;
-    String compName;
+    String compName, ticker;
     public LinkedHashMap<String, Stocks> stocksListMap = new LinkedHashMap<>();
+    public LinkedHashMap<String, Stocks> copyOfStocksListMap = new LinkedHashMap<>();
     public List<Stocks> listOfStocks = new ArrayList<>();
     ObjectMapper mapper = new ObjectMapper();
     ArrayList<Long> dividendDates = new ArrayList<>();
     ArrayList<Double> dividendAmount = new ArrayList<>();
-    ArrayList<HttpResponse> responses = new ArrayList<>();
+    ArrayList<HttpResponse> stockSummaryDataResponses = new ArrayList<>();
     CountDownLatch responseWaiter;
+    boolean includeDividends;
 
-    private boolean runAsyncRequest(String requestCommand){
-        boolean flag = false;
-        int elementsCount = responses.size();
-        Future < HttpResponse < JsonNode >  > future1 = Unirest.get(API_URL + requestCommand)
+    private void runAsyncRequest(String ticker){
+        Future < HttpResponse < JsonNode >  > future1 = Unirest.get(API_URL + "/stock/v2/get-statistics?region=US&symbol=" + ticker)
                 .header(rapidHost, rapidHostValue)
                 .header(rapidKey, rapidKeyValue)
                 .asJsonAsync(new Callback < JsonNode > () {
@@ -61,7 +61,7 @@ public class RapidAPIData {
                         responseWaiter.countDown();
                     }
                     public void completed(HttpResponse < JsonNode > response) {
-                        responses.add(response);
+                        stockSummaryDataResponses.add(response);
                         responseWaiter.countDown();
                     }
                     public void cancelled() {
@@ -69,29 +69,6 @@ public class RapidAPIData {
                         responseWaiter.countDown();
                     }
                 });
-        int countAfter = responses.size();
-        if (elementsCount == countAfter) flag = false;
-        if (countAfter > elementsCount ) flag = true;
-        return flag;
-    }
-
-    public void test(){
-        responseWaiter = new CountDownLatch(5);
-        tickers.add("ANAT");
-        tickers.add("AQN");
-        tickers.add("BKU");
-        tickers.add("BMO");
-        tickers.add("BNS");
-        for (int i = 0; i < tickers.size(); i++){
-            String request = "/stock/v2/get-statistics?region=US&symbol=" + tickers.get(i);
-            runAsyncRequest(request);
-        }
-        try {
-            responseWaiter.await();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        logger.log(Level.INFO, "запросы отработали");
     }
 
     public boolean getDividendHistoryData2(String startDate, String endDate, String ticker) {
@@ -108,6 +85,11 @@ public class RapidAPIData {
             return false;
         }
         logger.log(Level.INFO, "запрос успешно отработал");
+        boolean flag = parseDividendHistoryData2(response, ticker);
+        return flag;
+    }
+
+    public boolean parseDividendHistoryData2(HttpResponse<JsonNode> response, String ticker){
         JSONArray eventsDataArray = null;
         JSONObject jObject = null;
         try {
@@ -138,7 +120,8 @@ public class RapidAPIData {
         int isDividend15Years = dividendDates.size();
         if (isDividend15Years < 60) {
             logger.log(Level.INFO, "компания " + ticker + " выплачивала дивиденды меньше 15 лет подряд - исключаем ее из выборки...");
-            stocksListMap.get(ticker).changeCriteriaExecutionStatus("Yrs",props.testFailed());
+            if (stocksListMap.get(ticker) != null)
+                stocksListMap.get(ticker).changeCriteriaExecutionStatus("Yrs",props.testFailed());
             flag = false;
         } else flag = true;
         return flag;
@@ -223,6 +206,49 @@ public class RapidAPIData {
         return flag;
     }
 
+    public boolean isEPSPayOutAcceptable(String ticker){
+        //метод вычисляет и проверяет EPS%Payout - доля прибыли, направляемая на выплату дивидендов, не более 70%
+        boolean flag = false;
+        //алгоритм, если значение было ранее извлечено через API из поля payoutRatio
+        if (payoutRatioValue != null)
+            if (payoutRatioValue < 70) return true;
+            else return false;
+        double lastDivValue = dividendAmount.get(0);
+        double divAnnualized = lastDivValue * 4;
+
+        HttpResponse<JsonNode> response = getFinancialsTabData(ticker);
+        if (response ==  null) return false;
+        JSONArray basicEPSData;
+        JSONObject idsObject,timeSeriesData;
+        try {
+            timeSeriesData = response.getBody().getObject().getJSONObject("timeSeries");
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "запрос timeSeries отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            e.printStackTrace();
+            return false;
+        }
+
+        try {
+            basicEPSData = timeSeriesData.getJSONArray("annualBasicEPS");
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "запрос annualBasicEPS отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            e.printStackTrace();
+            return false;
+        }
+        //берем последнее значение EPS
+        idsObject = basicEPSData.getJSONObject(basicEPSData.length()- 1);
+        JSONObject val = idsObject.getJSONObject("reportedValue");
+        double epsValue = val.optDouble("raw");
+        //проверяем, что EPS не отрицательное и больше 0.01
+        if (epsValue > 0.01) {
+            //вычисляес Payout Ratio
+            payoutRatioValue = divAnnualized / epsValue * 100;
+            //сравниваем значение Payout Ratio с ожидаемым
+            if (payoutRatioValue < 70) flag = true;
+        }
+        return flag;
+    }
+
     public boolean filterByDividendRelatedCriterias() {
         LinkedHashMap<String, Stocks> copyOfStocksListMap = new LinkedHashMap<>();
         String startDate = getDateAsEpoch(Calendar.YEAR,-15);
@@ -235,6 +261,7 @@ public class RapidAPIData {
             if (!isDivPayoutFrequencyAcceptable()) continue;
             if (!isDivGrowthRateAcceptable()) continue;
             if (!isDivLastIncreasedDateAcceptable()) continue;
+            if (!isEPSPayOutAcceptable(ticker)) continue;
             //копируем прошедшую все обязательные критерии компанию в новый хешман
             copyOfStocksListMap.put(ticker,stocksListMap.get(ticker));
         }
@@ -323,48 +350,35 @@ public class RapidAPIData {
         return  flag;
     }
 
-    public void monthlyFilterByFundamentals() throws IOException {
+    public void monthlyFilterByFundamentals() throws IOException, InterruptedException {
         logger.log(Level.INFO, "фильтрация списка компаний по фундаментальным мультипликаторам:");
         logger.log(Level.INFO, "по продолжительности непрерывных дивидендных выплат  - от 15 лет подряд");
         logger.log(Level.INFO, "по marketCap  - от 2 млрд.долл.");
         String fileName = Configuration.reportsFolder + props.allUSMarketsSourceFile();
-        String startDate = getDateAsEpoch(Calendar.YEAR,-15);
-        String endDate = getDateAsEpoch(Calendar.YEAR,0);
-        for (int i = 0; i < tickers.size(); i++){
-            String ticker = tickers.get(i);
-            logger.log(Level.INFO, "считываем рыночные данные по компании " + ticker + " ...");
-            //если каких-то данных не хватает, пропускаем тикер
-            if(!getStockStatsData(ticker)) continue;
-            if (!getDividendHistoryData2(startDate,endDate,ticker)) continue;
-            //выгружаем в файл компании с капитализацией от 2млрд.долл. и с продолжительностью дивидендных выплат от 15 лет
-            if (marketCapValue > 2000000000 && isDividendPaidOffFor15Years(ticker)) {
-                stockObj = new Stocks();
-                stockObj.setTicker(ticker);
-                stockObj.setYield(yieldValue);
-                stockObj.setLastPrice(priceValue);
-                stockObj.setPE(peValue);
-                stockObj.setCompanyName(compName);
-                listOfStocks.add(stockObj);
-                stocksListMap.put(ticker,stockObj);
-                logger.log(Level.INFO, "капитализация компании " + ticker + " минимум 2 млрд.долл. - оставляем ее в выборке");
-                ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
-                String contents = ow.writeValueAsString(stockObj);
-                FileUtils.write(new File(fileName),contents,"UTF-8",true);
-            } else logger.log(Level.INFO, "капитализация компании " + ticker + " ниже 2 млрд.долл. - исключаем ее из выборки");
+        int cycles = tickers.size() / 5;
+        int remainder = tickers.size() - (cycles * 5);
+        int roundSize = tickers.size() - remainder;
+        includeDividends = true;
+        for (int i = 0; i < roundSize; i+=5) { //обработка списка тикеров общим числом кратным 5
+            responseWaiter = new CountDownLatch(5);
+            getAsyncData(i,i+5);
+            parseAsyncStockSummaryData(i,i+5);
         }
+        responseWaiter = new CountDownLatch(remainder);//обработка остатка (последняя партия тикеров меньше 5)
+        getAsyncData(roundSize,tickers.size());
+        parseAsyncStockSummaryData(roundSize,tickers.size());
         //подкручиваем формат файла для последующего импорта в других сессиях приложения
         String contents = FileUtils.readFileToString(new File(fileName),"UTF-8");
-        contents.replace("}{","},{");
-        String newContents = "[" + contents + "]";
+        String newContents = contents.replace("}{","},{");
+        newContents = "[" + newContents + "]";
         FileUtils.write(new File(fileName),newContents,"UTF-8",false);
     }
 
-    public void getAsyncData(String request, int i, int maxCount) throws InterruptedException {
+    public void getAsyncData(int i, int maxCount) throws InterruptedException {
         for (int t = i; t < maxCount; t++){
             String ticker = tickers.get(t);
             logger.log(Level.INFO, "считываем рыночные данные по " + ticker + " ...");
-            String requestText = request + ticker;
-            runAsyncRequest(requestText);
+            runAsyncRequest(ticker);
         }
         responseWaiter.await();
         responseWaiter = new CountDownLatch(0);
@@ -377,34 +391,76 @@ public class RapidAPIData {
         stockObj.setLastPrice(priceValue);
         stockObj.setPE(peValue);
         stockObj.setCompanyName(compName);
+        stockObj.changeCriteriaExecutionStatus("Yrs",props.testPassed());
         stockObj.changeCriteriaExecutionStatus("Yield",props.testPassed());
         stockObj.changeCriteriaExecutionStatus("Year",props.testPassed());
         stockObj.changeCriteriaExecutionStatus("Inc.",props.testPassed());
         stockObj.changeCriteriaExecutionStatus("Ex-Div",props.testPassed());
         stockObj.changeCriteriaExecutionStatus("Payout",props.testPassed());
+        stockObj.changeCriteriaExecutionStatus("($Mil)",props.testPassed());
         stockObj.changeCriteriaExecutionStatus("P/E",props.testPassed());
         listOfStocks.add(stockObj);
         logger.log(Level.INFO, "компания " + ticker + " соответствует вышеуказанным критериям - оставляем ее в выборке");
         return stockObj;
     }
 
-    public LinkedHashMap<String, Stocks> parseAsyncData(int startItem, int endItem){
-        LinkedHashMap<String, Stocks> copyOfStocksListMap = new LinkedHashMap<>();
+    public void dumpStockToFile(String ticker) throws IOException {
+        String fileName = Configuration.reportsFolder + props.allUSMarketsSourceFile();
+        stockObj = new Stocks();
+        stockObj.setTicker(ticker);
+        stockObj.setYield(yieldValue);
+        stockObj.setLastPrice(priceValue);
+        stockObj.setPE(peValue);
+        stockObj.setCompanyName(compName);
+        stockObj.changeCriteriaExecutionStatus("Yrs",props.testPassed());
+        stockObj.changeCriteriaExecutionStatus("Yield",props.notTested());
+        stockObj.changeCriteriaExecutionStatus("Year",props.notTested());
+        stockObj.changeCriteriaExecutionStatus("Inc.",props.notTested());
+        stockObj.changeCriteriaExecutionStatus("Ex-Div",props.notTested());
+        stockObj.changeCriteriaExecutionStatus("Payout",props.notTested());
+        stockObj.changeCriteriaExecutionStatus("($Mil)",props.testPassed());
+        stockObj.changeCriteriaExecutionStatus("P/E",props.notTested());
+        stocksListMap.put(ticker,stockObj);
+        logger.log(Level.INFO, "капитализация компании " + ticker + " равна или выше 2 млрд.долл. - оставляем ее в выборке");
+        logger.log(Level.INFO, "продолжительность непрерывных дивидендных выплат  компании " + ticker + " - от 15 лет подряд - оставляем ее в выборке");
+        ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
+        String contents = ow.writeValueAsString(stockObj);
+        FileUtils.write(new File(fileName),contents,"UTF-8",true);
+    }
+
+    public void parseAsyncStockSummaryData(int startItem, int endItem) throws IOException {
         for (int i = startItem; i < endItem; i++) {
-            String ticker = tickers.get(i);
-            if (responses.size() < i+1) continue;
-            parseStockStaticData(responses.get(i),ticker);
-            if (yieldValue >= 2.5 && peValue < 21 && payoutRatioValue < 70 && marketCapValue > 2000000000) {
-                stockObj = addStockAsObj(ticker);
-                copyOfStocksListMap.put(ticker,stockObj);
-            } else logger.log(Level.INFO, "компания " + ticker + " не соответствует одному или нескольким вышеуказанным критериям - исключаем ее из выборки");
+            if (stockSummaryDataResponses.size() < i+1){
+                stockSummaryDataResponses.add(null);
+                continue;
+            }
+            parseStockSummaryData(stockSummaryDataResponses.get(i));
+            if (includeDividends) {
+                if (marketCapValue != null){
+                    if (marketCapValue > 2000000000) {
+                        String startDate = getDateAsEpoch(Calendar.YEAR,-15);
+                        String endDate = getDateAsEpoch(Calendar.YEAR,0);
+                        if (getDividendHistoryData2(startDate,endDate,ticker)){
+                            if (isDividendPaidOffFor15Years(ticker))
+                                dumpStockToFile(ticker);
+                        }
+                    } else logger.log(Level.INFO, "компания " + ticker + " не соответствует критериям по капитализации и/или продолжительности дивидендных выплат");
+                }
+            } else
+                if (yieldValue != null && peValue != null && marketCapValue != null){
+                    if (yieldValue >= 2.5 && peValue < 21 && marketCapValue > 2000000000) {
+                        if (payoutRatioValue.isNaN() || payoutRatioValue < 70) {
+                            stockObj = addStockAsObj(ticker);
+                            copyOfStocksListMap.put(ticker,stockObj);
+                        }
+                    } else
+                        logger.log(Level.INFO, "компания " + ticker + " не соответствует одному или нескольким вышеуказанным критериям");
+                }
         }
-        return copyOfStocksListMap;
     }
 
     public void filterBySummaryDetails(String fileName) throws IOException, InterruptedException {
-        String fullFileName = Configuration.reportsFolder + fileName;String ticker = null;
-        LinkedHashMap<String, Stocks> copyOfStocksListMap = new LinkedHashMap<>();
+        String fullFileName = Configuration.reportsFolder + fileName;
         logger.log(Level.INFO, "фильтрация списка компаний:");
         logger.log(Level.INFO, "по величине дивидендов - от 2.5% годовых");
         logger.log(Level.INFO, "по P/E  - менее 21");
@@ -415,41 +471,12 @@ public class RapidAPIData {
         int roundSize = tickers.size() - remainder;
         for (int i = 0; i < roundSize; i+=5) { //обработка списка тикеров общим числом кратным 5
             responseWaiter = new CountDownLatch(5);
-            getAsyncData("/stock/v2/get-statistics?region=US&symbol=",i,i+5);
-            for (int t = i; t < i+5; t++) {
-                ticker = tickers.get(t);
-                if (responses.size() < t+1) continue;
-                parseStockStaticData(responses.get(t),ticker);
-                if (yieldValue >= 2.5 && peValue < 21 && payoutRatioValue < 70 && marketCapValue > 2000000000) {
-                    stockObj = addStockAsObj(ticker);
-                    copyOfStocksListMap.put(ticker,stockObj);
-                } else logger.log(Level.INFO, "компания " + ticker + " не соответствует одному или нескольким вышеуказанным критериям - исключаем ее из выборки");
-            }
+            getAsyncData(i,i+5);
+            parseAsyncStockSummaryData(i,i+5);
         }
         responseWaiter = new CountDownLatch(remainder);//обработка остатка (последняя партия тикеров меньше 5)
-        getAsyncData("/stock/v2/get-statistics?region=US&symbol=", roundSize,tickers.size());
-        for (int i = roundSize; i < tickers.size(); i++) {
-            ticker = tickers.get(i);
-            if (responses.size() < i+1) continue;
-            parseStockStaticData(responses.get(i),ticker);
-            if (yieldValue >= 2.5 && peValue < 21 && payoutRatioValue < 70 && marketCapValue > 2000000000) {
-                stockObj = addStockAsObj(ticker);
-                copyOfStocksListMap.put(ticker,stockObj);
-            } else logger.log(Level.INFO, "компания " + ticker + " не соответствует одному или нескольким вышеуказанным критериям - исключаем ее из выборки");
-        }
-//            String ticker = tickers.get(i);
-//            logger.log(Level.INFO, "считываем рыночные данные по " + ticker + " ...");
-//            boolean isDataAvailable = getStockStatsData(ticker);
-            //если каких-то данных не хватает, пропускаем тикер
-//            if (!isDataAvailable) continue;
-//        сортируем объекты по yield по убыванию
-//        Collections.sort(listOfStocks);
-//        Collections.reverse(listOfStocks);
-//        копируем данные объектов в хэшмап
-//        for (int i = 0; i < listOfStocks.size(); i++){
-//            String ticker = listOfStocks.get(i).getTicker();
-//            stocksListMap.put(ticker,listOfStocks.get(i));
-//        }
+        getAsyncData(roundSize,tickers.size());
+        parseAsyncStockSummaryData(roundSize,tickers.size());
         mapper.enable(SerializationFeature.INDENT_OUTPUT);
         mapper.writeValue(new File(fullFileName), listOfStocks);
         stocksListMap.clear();
@@ -469,16 +496,20 @@ public class RapidAPIData {
             return false;
         }
         logger.log(Level.INFO, "запрос успешно отработал");
-        boolean flag = parseStockStaticData(response, ticker);
+        boolean flag = parseStockSummaryData(response);
         return flag;
     }
 
-    public boolean parseStockStaticData(HttpResponse<JsonNode> response, String ticker){
-        JSONObject yield,closePrice,pe,jsonObject1,jsonObject2,payoutRatio,marketCap;
+    public boolean parseStockSummaryData(HttpResponse<JsonNode> response){
+        JSONObject yield = null,closePrice = null,pe = null,jsonObject1 = null,jsonObject2 = null,payoutRatio = null,marketCap = null;
+        ticker = response.getBody().getObject().optString("symbol");
+        if (ticker.equals("VZ"))
+            logger.log(Level.INFO, "поймал");
+
         try{
             jsonObject1 = response.getBody().getObject().getJSONObject("summaryDetail");
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            logger.log(Level.SEVERE, "запрос summaryDetail отработал с ошибкой - пропускаем компанию " + ticker + " ...");
             e.printStackTrace();
             return false;
         }
@@ -486,56 +517,71 @@ public class RapidAPIData {
         try {
             jsonObject2 = response.getBody().getObject().getJSONObject("price");
         } catch (Exception ex1) {
-            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            logger.log(Level.SEVERE, "запрос price отработал с ошибкой - пропускаем компанию " + ticker + " ...");
             ex1.printStackTrace();
             return false;
         }
         compName = jsonObject2.optString("shortName");
 
         try {
-            yield = jsonObject1.getJSONObject("dividendYield");
+            yield = jsonObject1.getJSONObject("trailingAnnualDividendYield");
         } catch (Exception ex1) {
-            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
-            ex1.printStackTrace();
-            return false;
+            logger.log(Level.SEVERE, "запрос trailingAnnualDividendYield не вернул данные, пробуем поле dividendYield...");
         }
-        if (yield == null) return false;
-        yieldValue = yield.optDouble("raw") * 100;
+        if (yield == null) {
+            try {
+                yield = jsonObject1.getJSONObject("dividendYield");
+            } catch (Exception ex1) {
+                logger.log(Level.SEVERE, "запрос dividendYield не вернул данные - пропускаем компанию " + ticker + " ...");
+                return false;
+            }
+        }
+        if (yield != null) yieldValue = yield.optDouble("raw") * 100;
 
         try {
-            closePrice = jsonObject1.getJSONObject("previousClose");
+            closePrice = jsonObject2.getJSONObject("regularMarketPrice");
         } catch (Exception ex1) {
-            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            logger.log(Level.SEVERE, "запрос previousClose отработал с ошибкой - пропускаем компанию " + ticker + " ...");
             ex1.printStackTrace();
             return false;
         }
-        priceValue = closePrice.optDouble("raw");
+        priceValue = closePrice.optDouble("fmt");
 
         try {
             pe = jsonObject1.getJSONObject("trailingPE");
 
         } catch (Exception ex) {
-            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
-            ex.printStackTrace();
-            return false;
+            logger.log(Level.INFO, "запрос trailingPE не вернул даннные, пробуем поле forwardPE");
         }
-        peValue = pe.optDouble("raw");
+        if (pe == null) {
+            try {
+                pe = jsonObject1.getJSONObject("forwardPE");
+
+            } catch (Exception ex) {
+                logger.log(Level.SEVERE, "запрос forwardPE отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+                return false;
+            }
+        }
+        if (pe != null) peValue = pe.optDouble("raw");
 
         try {
             payoutRatio = jsonObject1.getJSONObject("payoutRatio");
 
         } catch (Exception ex) {
-            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            logger.log(Level.SEVERE, "запрос payoutRatio отработал с ошибкой - пропускаем компанию " + ticker + " ...");
             ex.printStackTrace();
             return false;
         }
-        payoutRatioValue = payoutRatio.optDouble("raw") * 100;
+        if (payoutRatio != null)
+            payoutRatioValue = payoutRatio.optDouble("raw");
+        if (!payoutRatioValue.isNaN())
+            payoutRatioValue = payoutRatioValue * 100;
 
         try {
             marketCap = jsonObject1.getJSONObject("marketCap");
 
         } catch (Exception ex) {
-            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            logger.log(Level.SEVERE, "запрос marketCap отработал с ошибкой - пропускаем компанию " + ticker + " ...");
             ex.printStackTrace();
             return false;
         }
@@ -701,19 +747,24 @@ public class RapidAPIData {
         return operatingIncome;
     }
 
-    public JSONArray getStockIncomeStatementData(String ticker) {
+    public HttpResponse<JsonNode> getFinancialsTabData(String ticker){
         HttpResponse<JsonNode> response = null;
         try {
             response = Unirest.get(API_URL + "/stock/v2/get-financials?symbol=" + ticker)
-                        .header(rapidHost, rapidHostValue)
-                        .header(rapidKey, rapidKeyValue)
-                        .asJson();
+                    .header(rapidHost, rapidHostValue)
+                    .header(rapidKey, rapidKeyValue)
+                    .asJson();
         } catch (Exception e) {
             logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
             return null;
         }
-        JSONArray incomeStatementHistory;
         logger.log(Level.INFO, "запрос успешно отработал");
+        return response;
+    }
+
+    public JSONArray getStockIncomeStatementData(String ticker) {
+        HttpResponse<JsonNode> response = getFinancialsTabData(ticker);
+        JSONArray incomeStatementHistory;
         JSONObject jsonObject = response.getBody().getObject().getJSONObject("incomeStatementHistory");
         if (jsonObject == null) return null;
         incomeStatementHistory = jsonObject.getJSONArray("incomeStatementHistory");

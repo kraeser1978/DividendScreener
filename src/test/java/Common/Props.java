@@ -33,10 +33,6 @@ public class Props {
         return properties.getProperty("dripinvesting_url");
     }
 
-    public String coreURL(){
-        return properties.getProperty("core_url");
-    }
-
     public String APIURL(){
         return properties.getProperty("API_URL");
     }
