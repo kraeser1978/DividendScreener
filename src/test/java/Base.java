@@ -25,8 +25,8 @@ public class Base {
     @Test
     public void main() throws Exception {
         preparation();
-//        excelDataFiltering();
-        allUSMarketsDataFiltering();
+        excelDataFiltering();
+//        allUSMarketsDataFiltering();
         reportsGeneration();
     }
 

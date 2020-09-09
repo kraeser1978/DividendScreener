@@ -362,11 +362,11 @@ public class RapidAPIData {
         for (int i = 0; i < roundSize; i+=5) { //обработка списка тикеров общим числом кратным 5
             responseWaiter = new CountDownLatch(5);
             getAsyncData(i,i+5);
-            parseAsyncStockSummaryData(i,i+5);
+            parseAsyncStockSummaryData();
         }
         responseWaiter = new CountDownLatch(remainder);//обработка остатка (последняя партия тикеров меньше 5)
         getAsyncData(roundSize,tickers.size());
-        parseAsyncStockSummaryData(roundSize,tickers.size());
+        parseAsyncStockSummaryData();
         //подкручиваем формат файла для последующего импорта в других сессиях приложения
         String contents = FileUtils.readFileToString(new File(fileName),"UTF-8");
         String newContents = contents.replace("}{","},{");
@@ -428,13 +428,9 @@ public class RapidAPIData {
         FileUtils.write(new File(fileName),contents,"UTF-8",true);
     }
 
-    public void parseAsyncStockSummaryData(int startItem, int endItem) throws IOException {
-        for (int i = startItem; i < endItem; i++) {
-            if (stockSummaryDataResponses.size() < i+1){
-                stockSummaryDataResponses.add(null);
-                continue;
-            }
-            parseStockSummaryData(stockSummaryDataResponses.get(i));
+    public void parseAsyncStockSummaryData() throws IOException {
+        for (HttpResponse entry: stockSummaryDataResponses ) {
+            parseStockSummaryData(entry);
             if (includeDividends) {
                 if (marketCapValue != null){
                     if (marketCapValue > 2000000000) {
@@ -457,6 +453,7 @@ public class RapidAPIData {
                         logger.log(Level.INFO, "компания " + ticker + " не соответствует одному или нескольким вышеуказанным критериям");
                 }
         }
+        stockSummaryDataResponses.clear();
     }
 
     public void filterBySummaryDetails(String fileName) throws IOException, InterruptedException {
@@ -469,14 +466,15 @@ public class RapidAPIData {
         int cycles = tickers.size() / 5;
         int remainder = tickers.size() - (cycles * 5);
         int roundSize = tickers.size() - remainder;
+        includeDividends = false;
         for (int i = 0; i < roundSize; i+=5) { //обработка списка тикеров общим числом кратным 5
             responseWaiter = new CountDownLatch(5);
             getAsyncData(i,i+5);
-            parseAsyncStockSummaryData(i,i+5);
+            parseAsyncStockSummaryData();
         }
         responseWaiter = new CountDownLatch(remainder);//обработка остатка (последняя партия тикеров меньше 5)
         getAsyncData(roundSize,tickers.size());
-        parseAsyncStockSummaryData(roundSize,tickers.size());
+        parseAsyncStockSummaryData();
         mapper.enable(SerializationFeature.INDENT_OUTPUT);
         mapper.writeValue(new File(fullFileName), listOfStocks);
         stocksListMap.clear();
@@ -502,8 +500,9 @@ public class RapidAPIData {
 
     public boolean parseStockSummaryData(HttpResponse<JsonNode> response){
         JSONObject yield = null,closePrice = null,pe = null,jsonObject1 = null,jsonObject2 = null,payoutRatio = null,marketCap = null;
+        ticker = null;compName = null;yieldValue = null;priceValue = null;peValue = null;marketCapValue = null;payoutRatioValue = null;
         ticker = response.getBody().getObject().optString("symbol");
-        if (ticker.equals("VZ"))
+        if (ticker.equals("NJR"))
             logger.log(Level.INFO, "поймал");
 
         try{
@@ -764,10 +763,21 @@ public class RapidAPIData {
 
     public JSONArray getStockIncomeStatementData(String ticker) {
         HttpResponse<JsonNode> response = getFinancialsTabData(ticker);
+        JSONObject jsonObject;
         JSONArray incomeStatementHistory;
-        JSONObject jsonObject = response.getBody().getObject().getJSONObject("incomeStatementHistory");
+        try {
+            jsonObject = response.getBody().getObject().getJSONObject("incomeStatementHistory");
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "запрос incomeStatementHistory отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            return null;
+        }
         if (jsonObject == null) return null;
-        incomeStatementHistory = jsonObject.getJSONArray("incomeStatementHistory");
+        try {
+            incomeStatementHistory = jsonObject.getJSONArray("incomeStatementHistory");
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "запрос incomeStatementHistory отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            return null;
+        }
         return incomeStatementHistory;
     }
 
