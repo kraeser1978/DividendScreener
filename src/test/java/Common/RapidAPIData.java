@@ -37,7 +37,7 @@ public class RapidAPIData {
     final String API_URL = props.APIURL();final String rapidHost = props.rapidHost();final String rapidHostValue = props.rapidHostValue();
     final String rapidKey = props.rapidKey();final String rapidKeyValue = props.rapidKeyValue();
     public ArrayList<String> uniqueTickers = new ArrayList<String>();
-    Double yieldValue,priceValue,peValue,payoutRatioValue;
+    Double yieldValue,priceValue,peValue,payoutRatioValue,dividendRateValue;
     Long marketCapValue;
     Stocks stockObj;
     String compName, ticker;
@@ -71,50 +71,6 @@ public class RapidAPIData {
                 });
     }
 
-    public boolean getDividendHistoryData2(String startDate, String endDate, String ticker) {
-        logger.log(Level.INFO, "считываем дивиденды по " + ticker + " за последние 15 лет...");
-        HttpResponse<JsonNode> response = null;
-        try {
-            response = Unirest.get(API_URL + "/stock/v2/get-historical-data?frequency=1wk&filter=div" +
-                    "&period1=" + startDate + "&period2=" + endDate + "&symbol=" + ticker)
-                    .header(rapidHost, rapidHostValue)
-                    .header(rapidKey, rapidKeyValue)
-                    .asJson();
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
-            return false;
-        }
-        logger.log(Level.INFO, "запрос успешно отработал");
-        boolean flag = parseDividendHistoryData2(response, ticker);
-        return flag;
-    }
-
-    public boolean parseDividendHistoryData2(HttpResponse<JsonNode> response, String ticker){
-        JSONArray eventsDataArray = null;
-        JSONObject jObject = null;
-        try {
-            eventsDataArray = response.getBody().getObject().getJSONArray("eventsData");
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "дивиденды по компании " + ticker + " не были загружены, пропускаем ее...");
-            return false;
-        }
-        dividendDates.clear();
-        dividendAmount.clear();
-        for (int i=0; i < eventsDataArray.length();i++){
-            try {
-                jObject = eventsDataArray.getJSONObject(i);
-            } catch (Exception e) {
-                logger.log(Level.SEVERE, "дивиденды по компании " + ticker + " не были загружены, пропускаем ее...");
-                return false;
-            }
-            Long dateValue = jObject.optLong("date");
-            dividendDates.add(dateValue);
-            Double divValue = jObject.optDouble("amount");
-            dividendAmount.add(divValue);
-        }
-        return true;
-    }
-
     public boolean isDividendPaidOffFor15Years(String ticker){
         boolean flag = false;
         int isDividend15Years = dividendDates.size();
@@ -130,7 +86,6 @@ public class RapidAPIData {
     public boolean isDividendGrewFor10Years(String ticker){
         logger.log(Level.INFO, "метод проверяет актив на наличие поступательного роста его дивидендов в течение 10 прошедших лет");
         boolean flag = false;
-        LinkedHashMap<String, Stocks> copyOfStocksListMap = new LinkedHashMap<>();
         ArrayList<Double> dividends10Years = new ArrayList<>();
         for (int i=0; i< 41;i++) dividends10Years.add(dividendAmount.get(i));
         logger.log(Level.INFO, "выполняем проверку на то, что дивиденды за последние 10 лет поступательно росли...");
@@ -256,7 +211,7 @@ public class RapidAPIData {
         boolean flag = false;
         for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet()){
             String ticker = entry.getKey();
-            if (!getDividendHistoryData2(startDate,endDate,ticker)) continue;
+            if (!getDividendHistoryData(startDate,endDate,ticker)) continue;
             if (!isDividendPaidOffFor15Years(ticker)) continue;
             if (!isDivPayoutFrequencyAcceptable()) continue;
             if (!isDivGrowthRateAcceptable()) continue;
@@ -436,7 +391,7 @@ public class RapidAPIData {
                     if (marketCapValue > 2000000000) {
                         String startDate = getDateAsEpoch(Calendar.YEAR,-15);
                         String endDate = getDateAsEpoch(Calendar.YEAR,0);
-                        if (getDividendHistoryData2(startDate,endDate,ticker)){
+                        if (getDividendHistoryData(startDate,endDate,ticker)){
                             if (isDividendPaidOffFor15Years(ticker))
                                 dumpStockToFile(ticker);
                         }
@@ -499,10 +454,10 @@ public class RapidAPIData {
     }
 
     public boolean parseStockSummaryData(HttpResponse<JsonNode> response){
-        JSONObject yield = null,closePrice = null,pe = null,jsonObject1 = null,jsonObject2 = null,payoutRatio = null,marketCap = null;
-        ticker = null;compName = null;yieldValue = null;priceValue = null;peValue = null;marketCapValue = null;payoutRatioValue = null;
+        JSONObject yield = null,closePrice = null,pe = null,jsonObject1 = null,jsonObject2 = null,payoutRatio = null,marketCap = null,dividendRate = null;
+        ticker = null;compName = null;yieldValue = null;priceValue = null;peValue = null;marketCapValue = null;payoutRatioValue = null;dividendRateValue = null;
         ticker = response.getBody().getObject().optString("symbol");
-        if (ticker.equals("NJR"))
+        if (ticker.equals("GD"))
             logger.log(Level.INFO, "поймал");
 
         try{
@@ -523,21 +478,6 @@ public class RapidAPIData {
         compName = jsonObject2.optString("shortName");
 
         try {
-            yield = jsonObject1.getJSONObject("trailingAnnualDividendYield");
-        } catch (Exception ex1) {
-            logger.log(Level.SEVERE, "запрос trailingAnnualDividendYield не вернул данные, пробуем поле dividendYield...");
-        }
-        if (yield == null) {
-            try {
-                yield = jsonObject1.getJSONObject("dividendYield");
-            } catch (Exception ex1) {
-                logger.log(Level.SEVERE, "запрос dividendYield не вернул данные - пропускаем компанию " + ticker + " ...");
-                return false;
-            }
-        }
-        if (yield != null) yieldValue = yield.optDouble("raw") * 100;
-
-        try {
             closePrice = jsonObject2.getJSONObject("regularMarketPrice");
         } catch (Exception ex1) {
             logger.log(Level.SEVERE, "запрос previousClose отработал с ошибкой - пропускаем компанию " + ticker + " ...");
@@ -545,6 +485,40 @@ public class RapidAPIData {
             return false;
         }
         priceValue = closePrice.optDouble("fmt");
+
+        try {
+            dividendRate = jsonObject1.getJSONObject("dividendRate");
+        } catch (Exception ex1) {
+            logger.log(Level.SEVERE, "запрос dividendRate не вернул данные, пробуем поле trailingAnnualDividendRate ...");
+        }
+        if (dividendRate.toString().equals("{}")) {
+            try {
+                dividendRate = jsonObject1.getJSONObject("trailingAnnualDividendRate");
+            } catch (Exception ex1) {
+                logger.log(Level.SEVERE, "запрос trailingAnnualDividendRate не вернул данные - пробуем брать значение из полей dividendYield/trailingAnnualDividendYield  ...");
+            }
+        }
+        //если поле dividendRate содержит значение, рассчитываем yield исходя из него и текущей цены акции
+        if (dividendRate != null) {
+            dividendRateValue = dividendRate.optDouble("raw");
+            yieldValue = dividendRateValue / priceValue * 100;
+        //если поле dividendRate пустое, дополнительно считываем yield из полей trailingAnnualDividendYield / dividendYield
+        } else {
+            try {
+                yield = jsonObject1.getJSONObject("trailingAnnualDividendYield");
+            } catch (Exception ex1) {
+                logger.log(Level.SEVERE, "запрос trailingAnnualDividendYield не вернул данные, пробуем поле dividendYield...");
+            }
+            if (yield == null) {
+                try {
+                    yield = jsonObject1.getJSONObject("dividendYield");
+                } catch (Exception ex1) {
+                    logger.log(Level.SEVERE, "запрос dividendYield не вернул данные - пропускаем компанию " + ticker + " ...");
+                    return false;
+                }
+            }
+            if (yield != null) yieldValue = yield.optDouble("raw") * 100;
+        }
 
         try {
             pe = jsonObject1.getJSONObject("trailingPE");
@@ -797,10 +771,10 @@ public class RapidAPIData {
         for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet()){
             String ticker = entry.getKey();
             logger.log(Level.INFO, "считываем дивиденды по " + ticker + " за последние 10 лет...");
-            ArrayList<Double> dividends = getDividendHistoryData(startDate,endDate,ticker);
-            if (dividends == null) continue;
+            boolean dividends = getDividendHistoryData(startDate,endDate,ticker);
+            if (!dividends) continue;
             logger.log(Level.INFO, "выполняем проверку на то, что дивиденды за выбранный период поступательно росли...");
-            flag = compareCompanyQuotes(dividends);
+            flag = compareCompanyQuotes(dividendAmount);
             if (flag) {
                 logger.log(Level.INFO, "размер дивиденда компании " + ticker + " поступательно рос все время в течение выбранного периода");
                 stocksListMap.get(ticker).changeCriteriaExecutionStatus("DivCheck",props.testPassed());
@@ -841,40 +815,68 @@ public class RapidAPIData {
         return true;
     }
 
-    public ArrayList<Double> getDividendHistoryData(String startDate, String endDate, String ticker) {
+    public boolean getDividendHistoryData(String startDate, String endDate, String ticker) {
+        boolean flag = false;
         HttpResponse<JsonNode> response = null;
         try {
-            response = Unirest.get(API_URL + "/stock/v2/get-historical-data?frequency=1wk&filter=div" +
+            response = Unirest.get(API_URL + "/stock/v2/get-chart?&region=US&interval=1d" +
                     "&period1=" + startDate + "&period2=" + endDate + "&symbol=" + ticker)
                     .header(rapidHost, rapidHostValue)
                     .header(rapidKey, rapidKeyValue)
                     .asJson();
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию " + ticker + " ...");
-            return null;
+            logger.log(Level.SEVERE, "запрос дивидендов отработал с ошибкой - пропускаем компанию " + ticker + " ...");
+            return flag;
         }
-        ArrayList<Double> dividends = new ArrayList<>();
-        logger.log(Level.INFO, "запрос успешно отработал");
-        JSONArray eventsDataArray;
-        JSONObject jObject;
+        logger.log(Level.INFO, "запрос дивидендов успешно отработал");
+        flag = parseDividendHistoryData(response,ticker);
+        return flag;
+    }
+
+    public boolean parseDividendHistoryData(HttpResponse<JsonNode> response, String ticker){
+        boolean flag = false;double divValue;
+        ArrayList<String> epochDates = new ArrayList<>();
+        JSONArray datesKeys; JSONObject jObject,jObject1,jObject2;
         try {
-            eventsDataArray = response.getBody().getObject().getJSONArray("eventsData");
+            jObject = response.getBody().getObject().getJSONObject("chart");
         } catch (Exception e) {
             logger.log(Level.SEVERE, "дивиденды по компании " + ticker + " не были загружены, пропускаем ее...");
-            return null;
+            return flag;
         }
-
-        for (int i=0; i < eventsDataArray.length();i++){
+        try {
+            jObject1 = jObject.getJSONArray("result").getJSONObject(0).getJSONObject("events").getJSONObject("dividends");
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "дивиденды по компании " + ticker + " не были загружены, пропускаем ее...");
+            return flag;
+        }
+        dividendDates.clear();
+        dividendAmount.clear();
+        //считываем массив дат выплат дивидендов
+        datesKeys = jObject1.names();
+        //конвертируем массив дат в long
+        for (int t = 0; t < datesKeys.length(); t++){
+            Long dateValue = Long.parseLong(datesKeys.getString(t));
+            dividendDates.add(dateValue);
+//            epochDates.add(datesKeys.getString(t));
+        }
+        //сортируем даты по возрастанию, в начале - самая раняя
+        Collections.sort(dividendDates);
+        Collections.reverse(dividendDates);
+        //по каждой дате считываем значение дивиденда и записываем в отдельный массив
+        for (int i=0; i < dividendDates.size();i++){
             try {
-                jObject = eventsDataArray.getJSONObject(i);
+                String currentDate = dividendDates.get(i).toString();
+                jObject2 = jObject1.getJSONObject(currentDate);
+                Object obj  = jObject2.get("amount");
+                divValue = Double.parseDouble(obj.toString());
+                dividendAmount.add(divValue);
             } catch (Exception e) {
                 logger.log(Level.SEVERE, "дивиденды по компании " + ticker + " не были загружены, пропускаем ее...");
-                return null;
+                return flag;
             }
-            double divValue = jObject.optDouble("amount");
-            dividends.add(divValue);
         }
-        return dividends;
+        flag = true;
+        return flag;
     }
 
     public JSONArray getStockQuotes(JSONObject jObject){
