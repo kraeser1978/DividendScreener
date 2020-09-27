@@ -109,6 +109,6 @@ public class Base {
         String excelReport = divsExcelData.generateExcelReport2(rapidAPIData.stocksListMap);
         Unirest.shutdown();
         logger.log(Level.INFO, "отчет сформирован в файле " + excelReport);
-//        sendReportByEmail(excelReport);
+        sendReportByEmail(excelReport);
     }
 }

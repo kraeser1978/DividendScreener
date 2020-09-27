@@ -1,5 +1,8 @@
 package Common;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.mashape.unirest.http.HttpResponse;
 import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
@@ -8,6 +11,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
 
+import java.io.File;
+import java.io.IOException;
+import java.net.URISyntaxException;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -19,38 +25,123 @@ import static java.util.logging.Level.SEVERE;
 
 public class MOEXData {
     private static Logger logger = Logger.getLogger(MOEXData.class.getSimpleName());
+    ObjectMapper mapper = new ObjectMapper();
     public LinkedHashMap<String,String> allMOEXStocksMap = new LinkedHashMap<String,String>();
     public ArrayList<ArrayList<String>> allMOEXStocks = new ArrayList<ArrayList<String>>();
     public ArrayList<ArrayList<String>> outPerformingStocks = new ArrayList<>();
     public ArrayList<Double> imoexIndexPrices = new ArrayList<>();
     public ArrayList<Double> stockPrices = new ArrayList<>();
     String someTimeAgoStr,prevDateStr = null;
+    ArrayList<String> prevDates = new ArrayList<>();
     DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+    String currentWorkingDir = null;
 
     @Test
-    public void filterStocksFor3MonthsTimeFrame() throws ParseException {
-        //считываем котировки индекса ММВБ по границам периода
-        getIMOEXHistoricalPrices(Calendar.MONTH,-3);
-        getIMOEXHistoricalPrices(Calendar.DATE,-1);
+    public void filterStocksForAllTimeFrames() throws ParseException {
         //фильтруем по капитализации
         filterByCompanyCap();
         //фильтруем по месячному объему торгов
         filterByMonthlyTradeVolume();
+        //фильтруем по разным временным интервалам
+        filterStocksFor3MonthsTimeFrame();
+        filterStocksFor1YearTimeFrame();
+        filterStocksFor3YearsTimeFrame();
+        findCommonStocksInAllTimeFrames();
+        dumpResultsToJSON();
+        sortStocksByGrowthRate();
+        sendFilteredTickersToTelegram();
+    }
+
+    private void findCommonStocksInAllTimeFrames() {
+        for (int i = 0; i< allMOEXStocks.size(); i++){
+            int companyGrowthCount = allMOEXStocks.get(i).size();
+            //отбираем те компании, которые показали более высокий прирост стоимости по отношению к индексу ММВБ на всех трех временных интервалах
+            //последние 3 элемента - значения прироста за 3 месяца, 1 год и 3 года
+            //поэтому общее кол-во элементов листа должно быть 6
+            if (companyGrowthCount == 6){
+                outPerformingStocks.add(allMOEXStocks.get(i));
+            }
+        }
+    }
+
+    private void getWorkingDir(){
+        File file = null;
+        try {
+            file = new File(MOEXData.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath());
+        } catch (URISyntaxException e) {
+            e.printStackTrace();
+        }
+        currentWorkingDir = file.getParentFile().getPath();
+    }
+
+    private void dumpResultsToJSON(){
+        getWorkingDir();
+        mapper.enable(SerializationFeature.INDENT_OUTPUT);
+        try {
+            mapper.writeValue(new File(currentWorkingDir + "\\outPerformingStocks.json"), outPerformingStocks);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Test
+    public void sortStocksByGrowthRate(){
+        getWorkingDir();
+        if (outPerformingStocks.size() == 0){
+            try {
+                outPerformingStocks = mapper.readValue(new File(currentWorkingDir + "\\outPerformingStocks.json"), new TypeReference<ArrayList<ArrayList<String>>>(){});
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+    }
+
+    public void filterStocksFor3YearsTimeFrame() throws ParseException {
+        //считываем котировки индекса ММВБ за последние 3 года
+        getIMOEXHistoricalPrices(Calendar.YEAR,-3);
+        getIMOEXHistoricalPrices(Calendar.DATE,-1);
+        filterStocks("3 года");
+    }
+
+    public void filterStocksFor1YearTimeFrame() throws ParseException {
+        //считываем котировки индекса ММВБ за последний год
+        getIMOEXHistoricalPrices(Calendar.YEAR,-1);
+        getIMOEXHistoricalPrices(Calendar.DATE,-1);
+        filterStocks("1 год");
+    }
+
+    public void filterStocksFor3MonthsTimeFrame() throws ParseException {
+        //считываем котировки индекса ММВБ за последние 3 месяца
+        getIMOEXHistoricalPrices(Calendar.MONTH,-3);
+        getIMOEXHistoricalPrices(Calendar.DATE,-1);
+        filterStocks("3 месяца");
+    }
+
+    private void filterStocks(String timeFrame){
         //считываем котировки каждой акции из списка и фильтруем по приросту стоимости к ММВБ
         for (int i = 0; i< allMOEXStocks.size(); i++){
             String ticker = allMOEXStocks.get(i).get(0);
             stockPrices.clear();
-            getStockHistoricalPrices(ticker,Calendar.MONTH,-3);
-            getStockHistoricalPrices(ticker,Calendar.DATE,-1);
-            logger.log(INFO,imoexIndexPrices.toString());
-            String filteredTicker = filterOutPerformingStocks(ticker,"3 месяца");
-            //добавляем отобранную акцию в отдельный массив
-            if (filteredTicker != null)
-                outPerformingStocks.add(allMOEXStocks.get(i));
+            //извлекаем исторические данные по котировке акции компании за N период назад
+            boolean isStartPeriodDataAvailable = getStockHistoricalPrices(ticker,prevDates.get(0));
+            //извлекаем данные по котировке акции компании на предыдущий торговый день
+            boolean isEndPeriodDataAvailable = getStockHistoricalPrices(ticker,prevDates.get(1));
+            //продолжаем, если есть данные
+            if (isStartPeriodDataAvailable && isEndPeriodDataAvailable ) {
+                //сравниваем рост стоимости акции с ростом индекса ММВБ за период
+                double stockGrowthRate = isStockOutPerformedIMOEX(ticker,timeFrame);
+                //добавляем отобранную акцию в отдельный массив
+                if (stockGrowthRate > 0){
+                    String rate = Double.toString(stockGrowthRate);
+                    ArrayList<String> currentStockData = allMOEXStocks.get(i);
+                    currentStockData.add(rate);
+                }
+            }
         }
-        sendFilteredTickersToTelegram();
-        //считываем список всех компаний
-//        getMOEXStocksList();
+        imoexIndexPrices.clear();
+        prevDates.clear();
+        stockPrices.clear();
     }
 
     private void sendFilteredTickersToTelegram(){
@@ -107,7 +198,6 @@ public class MOEXData {
         allMOEXStocks = (ArrayList<ArrayList<String>>) copyOfallMOEXStocks.clone();
     }
 
-    @Test
     public void filterByCompanyCap(){
         HttpResponse<JsonNode> response = null;String result = null;
         JSONObject jsonObject,jsonObject1 = null;JSONArray jsonArray = null,mData = null;
@@ -133,7 +223,7 @@ public class MOEXData {
         logger.log(INFO,"список компаний с капитализацией свыше 500 млн.руб. составлен");
     }
 
-    public String filterOutPerformingStocks(String ticker, String timeFrame){
+    public double isStockOutPerformedIMOEX(String ticker, String timeFrame){
         //рассчитываем коэффициент роста индекса ММВБ за период
         double imoexIndexGrowthRate = Precision.round(imoexIndexPrices.get(1) * 100 / imoexIndexPrices.get(0) - 100,1);
         //рассчитываем коэффициент роста акции за период
@@ -144,41 +234,29 @@ public class MOEXData {
             logger.log(INFO,"акция компании " + ticker + " обгоняла рост индекса ММВБ за " + timeFrame);
         else {
             logger.log(INFO,"акция компании " + ticker + " росла медленее индекса ММВБ за " + timeFrame);
-            ticker = null;
+            currentStockGrowthRate = 0;
         }
         logger.log(INFO,"рост индекса ММВБ за " + timeFrame + ": " + imoexIndexGrowthRate + "%");
         logger.log(INFO,"рост акции за " + timeFrame + ": " + currentStockGrowthRate + "%");
-        return ticker;
+        return currentStockGrowthRate;
     }
 
-    public void getStockHistoricalPrices(String ticker, int timeFrame,int timeShift) throws ParseException {
+    public boolean getStockHistoricalPrices(String ticker, String startDate) {
+        boolean flag = false;
         HttpResponse<JsonNode> response = null;String result = null;
         JSONObject jsonObject = null;JSONArray jsonArray = null,mData = null;
         double value = 0;
-        //определяем начальную дату
         Calendar cal = Calendar.getInstance();
-        if (timeFrame !=0 || timeShift !=0)
-            cal.add(timeFrame,timeShift);
+        cal.add(Calendar.DATE,-1);
         Date someTimeAgo = cal.getTime();
-//        Date someTimeAgo = dateFormat.parse("2017-09-24");
-        //проверка на выходные/праздничные дни
-        Calendar cl = Calendar.getInstance();
-        cl.setTime(someTimeAgo);
-        if ((cl.get(Calendar.DAY_OF_WEEK) == Calendar.SATURDAY) || (cl.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY)){
-            do {
-                //берем предыдущий день и шлем запрос на него в ММВБ
-                //отступаем на день назад до тех пор, пока запрос не вернет данные
-                cl.add(Calendar.DATE,-1);
-                calcTimeFrameDates(cl,someTimeAgo);
-                jsonArray = getDataForPrevDate2(ticker,response);
-                result = jsonArray.toString();
-            }
-            while (result.equals("[]"));
-        } else{
-            calcTimeFrameDates(cl,someTimeAgo);
-            jsonArray = getDataForPrevDate2(ticker,response);
-        }
-
+        someTimeAgoStr = dateFormat.format(someTimeAgo);
+        //берем начальную дату из prevDates
+        response = getStockData(ticker,startDate,someTimeAgoStr);
+        jsonObject = response.getBody().getObject().getJSONObject("history");
+        jsonArray = jsonObject.getJSONArray("data");
+        result = jsonArray.toString();
+        if (result.equals("[]"))
+            return flag;
         try {
             mData = jsonArray.getJSONArray(0);
         } catch (Exception e){
@@ -192,38 +270,42 @@ public class MOEXData {
         }
 //        if (value > 0)
             stockPrices.add(value);
+        flag = true;
+        return flag;
     }
 
     public void getIMOEXHistoricalPrices(int timeFrame,int timeShift) throws ParseException {
-        HttpResponse<JsonNode> response = null;String result = null;
-        JSONObject jsonObject = null;JSONArray jsonArray = null,mData = null;
+        String result = null;JSONObject jsonObject = null;JSONArray jsonArray = null,mData = null;
+        Calendar cl = null;Date someTimeAgo = null;
         //определяем начальную дату
-        DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
         Calendar cal = Calendar.getInstance();
         if (timeFrame !=0 || timeShift !=0)
             cal.add(timeFrame,timeShift);
-        Date someTimeAgo = cal.getTime();
-//        Date someTimeAgo = dateFormat.parse("2017-09-24");
+        someTimeAgo = cal.getTime();
         //проверка на выходные/праздничные дни
-        Calendar cl = Calendar.getInstance();
+        cl = Calendar.getInstance();
         cl.setTime(someTimeAgo);
-        if ((cl.get(Calendar.DAY_OF_WEEK) == Calendar.SATURDAY) || (cl.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY)){
-            do {
-                //берем предыдущий день и шлем запрос на него в ММВБ
-                //отступаем на день назад до тех пор, пока запрос не вернет данные
+        calcTimeFrameDates(cl,someTimeAgo);
+
+        jsonArray = getDataForPrevDate();
+        result = jsonArray.toString();
+        if (result.equals("[]")){
+            //проверка на попадание в самые длинные новогодние каникулы в РФ
+            //значение ближайшей начальной даты, на которую есть данные, сохранится в prevDateStr
+            for (int i = 0; i < 11; i++){
                 cl.add(Calendar.DATE,-1);
                 calcTimeFrameDates(cl,someTimeAgo);
-                jsonArray = getDataForPrevDate(response);
+                jsonArray = getDataForPrevDate();
                 result = jsonArray.toString();
+                if (!result.equals("[]"))
+                    break;
             }
-            while (result.equals("[]"));
-        } else{
-            calcTimeFrameDates(cl,someTimeAgo);
-            jsonArray = getDataForPrevDate(response);
         }
         mData = jsonArray.getJSONArray(0);
         //берем close price по индексу ММВБ за выбранную дату
         imoexIndexPrices.add(mData.getDouble(5));
+        //запоминаем подобранную начальную дату, на которые есть данные по торгам - пригодится для запросов по компаниям
+        prevDates.add(prevDateStr);
     }
 
     private void calcTimeFrameDates(Calendar cl,Date someTimeAgo){
@@ -233,15 +315,8 @@ public class MOEXData {
         prevDateStr = dateFormat.format(prevDate);
     }
 
-    private JSONArray getDataForPrevDate2(String ticker, HttpResponse<JsonNode> response){
-        response = getStockData(ticker,prevDateStr,someTimeAgoStr);
-        JSONObject jsonObject = response.getBody().getObject().getJSONObject("history");
-        JSONArray jsonArray = jsonObject.getJSONArray("data");
-        return jsonArray;
-    }
-
-    private JSONArray getDataForPrevDate(HttpResponse<JsonNode> response){
-        response = getIMOEXIndexData(prevDateStr,someTimeAgoStr);
+    private JSONArray getDataForPrevDate(){
+        HttpResponse<JsonNode> response = getIMOEXIndexData(prevDateStr,someTimeAgoStr);
         JSONObject jsonObject = response.getBody().getObject().getJSONObject("history");
         JSONArray jsonArray = jsonObject.getJSONArray("data");
         return jsonArray;
@@ -287,7 +362,7 @@ public class MOEXData {
             logger.log(SEVERE, "запрос к рыночным данным ММВБ отработал с ошибкой");
             response = null;
         }
-        logger.log(INFO, "данные по компании " + ticker + " считаны успешно");
+        logger.log(INFO, "данные по компании " + ticker + " за период с " + dateFrom + " по " + dateTill + " считаны успешно");
         return response;
     }
 
