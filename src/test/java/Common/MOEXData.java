@@ -29,6 +29,7 @@ public class MOEXData {
     public LinkedHashMap<String,String> allMOEXStocksMap = new LinkedHashMap<String,String>();
     public ArrayList<ArrayList<String>> allMOEXStocks = new ArrayList<ArrayList<String>>();
     public ArrayList<ArrayList<String>> outPerformingStocks = new ArrayList<>();
+    public ArrayList<GrowthStock> growthStocks = new ArrayList<>();
     public ArrayList<Double> imoexIndexPrices = new ArrayList<>();
     public ArrayList<Double> stockPrices = new ArrayList<>();
     String someTimeAgoStr,prevDateStr = null;
@@ -49,7 +50,7 @@ public class MOEXData {
         findCommonStocksInAllTimeFrames();
         dumpResultsToJSON();
         sortStocksByGrowthRate();
-        sendFilteredTickersToTelegram();
+        formatResultsAndSendToTelegram();
     }
 
     private void findCommonStocksInAllTimeFrames() {
@@ -87,6 +88,7 @@ public class MOEXData {
     @Test
     public void sortStocksByGrowthRate(){
         getWorkingDir();
+        //считываем данные из исходного файла, если лист не заполнен данными
         if (outPerformingStocks.size() == 0){
             try {
                 outPerformingStocks = mapper.readValue(new File(currentWorkingDir + "\\outPerformingStocks.json"), new TypeReference<ArrayList<ArrayList<String>>>(){});
@@ -94,7 +96,47 @@ public class MOEXData {
                 e.printStackTrace();
             }
         }
+        //записываем результаты в объекты
+        for (int i = 0; i< outPerformingStocks.size(); i++){
+            GrowthStock growthStock = new GrowthStock();
+            growthStock.setTicker(outPerformingStocks.get(i).get(0));
+            Long cap = Long.parseLong(outPerformingStocks.get(i).get(1));
+            growthStock.setCompanyCapValue(cap);
+            Long tradeVol = Long.parseLong(outPerformingStocks.get(i).get(2));
+            growthStock.setTradeVolume(tradeVol);
+            Double threeMonths = Double.parseDouble(outPerformingStocks.get(i).get(3));
+            growthStock.setThreeMonthsGrowthRate(threeMonths);
+            Double oneYear = Double.parseDouble(outPerformingStocks.get(i).get(4));
+            growthStock.setOneYearGrowthRate(oneYear);
+            Double threeYears = Double.parseDouble(outPerformingStocks.get(i).get(5));
+            growthStock.setThreeYearsGrowthRate(threeYears);
+            growthStocks.add(growthStock);
+        }
+        //сортируем массив объектов по росту за 3 месяца
+        BeanComparator bc = new BeanComparator(GrowthStock.class, "getThreeMonthsGrowthRate",false);
+        Collections.sort(growthStocks, bc);
+    }
 
+    public void formatResultsAndSendToTelegram(){
+        String output = "";
+        DateFormat dateFormat = new SimpleDateFormat("dd-MMM-yyyy");
+        Calendar cal = Calendar.getInstance();
+        Date today = cal.getTime();
+        String todayStr = dateFormat.format(today);
+        String header1 = "Расчет%20прироста%20стоимости%20акций%20на%20различных%20временных%20интервалах%20по%20состоянию%20на%20"+todayStr+"%0A%0D";
+//        String spaces = new String(new char[63]).replace("\0","%20");
+        String header2 = "за%203%20месяца%20%20%20за%201%20год%20%20%20за%203%20года%0A%0D";
+        Telegram telegram = new Telegram();
+        for (int i = 0; i < growthStocks.size(); i++){
+            String ticker = growthStocks.get(i).getTicker();
+            String cap = Long.toString(growthStocks.get(i).getCompanyCapValue());
+            String vol = Long.toString(growthStocks.get(i).getTradeVolume());
+            String threeM = Double.toString(growthStocks.get(i).getThreeMonthsGrowthRate());
+            String oneY = Double.toString(growthStocks.get(i).getOneYearGrowthRate());
+            String threeY = Double.toString(growthStocks.get(i).getThreeYearsGrowthRate());
+            output = output + ticker + "%20%20%2B" + threeM + "%25%20%20%2B" + oneY + "%25%20%20%2B" + threeY + "%25,%0A%0D";
+        }
+        telegram.sendToTelegram2(header1+header2+output);
     }
 
     public void filterStocksFor3YearsTimeFrame() throws ParseException {
@@ -134,8 +176,10 @@ public class MOEXData {
                 //добавляем отобранную акцию в отдельный массив
                 if (stockGrowthRate > 0){
                     String rate = Double.toString(stockGrowthRate);
-                    ArrayList<String> currentStockData = allMOEXStocks.get(i);
-                    currentStockData.add(rate);
+                    if (!rate.equals("Infinity")){
+                        ArrayList<String> currentStockData = allMOEXStocks.get(i);
+                        currentStockData.add(rate);
+                    }
                 }
             }
         }
@@ -166,8 +210,9 @@ public class MOEXData {
         HttpResponse<JsonNode> response = null;String result = null;
         ArrayList<ArrayList<String>> copyOfallMOEXStocks = new ArrayList<ArrayList<String>>();
         JSONObject jsonObject = null;JSONArray jsonArray = null,mData = null;
-        String ticker = null; double tradeVolume = 0; double monthlyVolume = 0;
-        double value = 0;
+        String ticker = null;
+//        double tradeVolume = 0; double monthlyVolume = 0;double minTurnOverLimit = 200000000 / 12;
+        long tradeVolume = 0; long monthlyVolume = 0; long minTurnOverLimit = 200000000 / 12;
         //определяем начальную дату
         Calendar cal = Calendar.getInstance();
         Date today = cal.getTime();
@@ -184,11 +229,13 @@ public class MOEXData {
                 continue;
             for (int i = 0; i< jsonArray.length(); i++){
                 mData = jsonArray.getJSONArray(i);
-                tradeVolume = mData.getDouble(12);
+//                tradeVolume = mData.getDouble(5);
+                tradeVolume = mData.getLong(5);
                 monthlyVolume = monthlyVolume + tradeVolume;
             }
-            if (monthlyVolume > 200000000){
-                String vol = Double.toString(monthlyVolume);
+            if (monthlyVolume > minTurnOverLimit){
+//                String vol = Double.toString(monthlyVolume);
+                String vol = Long.toString(monthlyVolume);
                 allMOEXStocks.get(n).add(vol);
                 copyOfallMOEXStocks.add(allMOEXStocks.get(n));
             }
@@ -210,7 +257,7 @@ public class MOEXData {
             marketType = mData.getString(2);
             if (marketType.equals("MRKT")){
                 ticker = mData.getString(0);
-                cap = mData.getLong(22);
+                cap = mData.getLong(21);
                 //оставляем только те компании, чья среднемесячная капитализация свыше 500 млн.руб.
                 if (cap > 500000000){
                     ArrayList<String> russianStock = new ArrayList<>();
