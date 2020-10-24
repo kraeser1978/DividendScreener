@@ -212,7 +212,7 @@ public class MOEXData {
         JSONObject jsonObject = null;JSONArray jsonArray = null,mData = null;
         String ticker = null;
 //        double tradeVolume = 0; double monthlyVolume = 0;double minTurnOverLimit = 200000000 / 12;
-        long tradeVolume = 0; long monthlyVolume = 0; long minTurnOverLimit = 200000000 / 12;
+        long minTurnOverLimit = 200000000 / 12;
         //определяем начальную дату
         Calendar cal = Calendar.getInstance();
         Date today = cal.getTime();
@@ -220,8 +220,16 @@ public class MOEXData {
         Date oneMonthAgo = cal.getTime();
         String oneMonthStr = dateFormat.format(oneMonthAgo);
         String todayStr = dateFormat.format(today);
+//        ArrayList<String> ticToFind = new ArrayList<>();
+//        ticToFind.add("AFLT");
+//        ticToFind.add("MGNZ");
+//        ticToFind.add("KMEZ");
+//        ticToFind.add("KTSB");
         for (int n = 0; n < allMOEXStocks.size(); n++){
+            long tradeVolume = 0; long monthlyVolume = 0;
             ticker = allMOEXStocks.get(n).get(0);
+//            if (ticToFind.contains(ticker))
+//                logger.log(INFO,"нашел");
             response = getCompanyTradeVolumeData(ticker,oneMonthStr,todayStr);
             jsonObject = response.getBody().getObject().getJSONObject("history");
             jsonArray = jsonObject.getJSONArray("data");
@@ -240,7 +248,7 @@ public class MOEXData {
                 copyOfallMOEXStocks.add(allMOEXStocks.get(n));
             }
         }
-        logger.log(INFO,"список компаний с ежемесячным оборотом свыше 200 млн.руб. составлен");
+        logger.log(INFO,"список компаний с годовым объемом торгов свыше 200 млн.руб. составлен");
         allMOEXStocks.clear();
         allMOEXStocks = (ArrayList<ArrayList<String>>) copyOfallMOEXStocks.clone();
     }
@@ -248,7 +256,7 @@ public class MOEXData {
     public void filterByCompanyCap(){
         HttpResponse<JsonNode> response = null;String result = null;
         JSONObject jsonObject,jsonObject1 = null;JSONArray jsonArray = null,mData = null;
-        String marketType,ticker = null; Long cap = null;
+        String marketType,ticker = null;Long cap = null;
         response = getCompanyTotalsData();
         jsonObject = response.getBody().getObject().getJSONObject("securities");
         jsonArray = jsonObject.getJSONArray("data");

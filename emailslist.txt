@@ -7,3 +7,4 @@ alexey.chudik@yandex.ru = 05/09/2021
 Bront_nsk@mail.ru = 15/09/2021
 nfo@maxcapital.ru = 30/09/2021
 yuryruzavin@yahoo.com = 05/10/2021
+ser-33@yandex.ru = 23/10/2021
