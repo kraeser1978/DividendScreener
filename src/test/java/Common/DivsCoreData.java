@@ -5,6 +5,7 @@ import com.mashape.unirest.http.HttpResponse;
 import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.CharSet;
 import org.apache.poi.ss.usermodel.Cell;
 import org.bouncycastle.util.encoders.Base64Encoder;
 import org.json.JSONArray;
@@ -212,7 +213,7 @@ public class DivsCoreData {
             try {
                 FileUtils.write(new File(pclistFileName),newFileContents,"UTF-8");
                 //загружаем обновленный файл с именем компьютера нового пользователя
-                uploadFileToDisk();
+                uploadFileToDisk("pclist.txt");
                 logger.log(Level.INFO, "Ваша подписка на приложение ранее не была оформлена. Вам предоставляется 7 дневный пробный период использования приложения. ");
                 logger.log(Level.INFO,"По истечении пробного периода для оформления подписки пожалуйста свяжитесь с разработчиком по email: " + props.gmailUsername());
                 pressEnterToContinue();
@@ -236,12 +237,11 @@ public class DivsCoreData {
         {}
     }
 
-    public void fileDownload() throws IOException {
+    public String getDownloadLink(String shortFileName){
         String diskAPI_URL = props.diskAPIURL();
         String OAuthKey = props.OAuthKey();
         HttpResponse<JsonNode> response1 = null;
-        String location = "disk:/Приложения/dividendscreener/pclist.txt";
-        String fullFileName = Configuration.reportsFolder + "\\pclist.txt";
+        String location = "disk:/Приложения/dividendscreener/" + shortFileName;
         try {
             response1 = Unirest.get(diskAPI_URL + "/disk/resources/download?path=" + location)
                     .header("Accept", "application/json")
@@ -250,13 +250,17 @@ public class DivsCoreData {
                     .asJson();
         } catch (Exception e) {
             logger.log(Level.SEVERE, "запрос ссылки для скачивания файла выдал ошибку");
-//            return null;
         }
         logger.log(Level.INFO, "ссылка для скачивания файла сформирована");
         JSONObject jsonObject = response1.getBody().getObject();
         JSONArray jsonArray = response1.getBody().getArray();
         String fileDownloadUrl = jsonObject.getString("href");
+        return fileDownloadUrl;
+    }
 
+    public void fileDownload(String shortFileName) throws IOException {
+        String fileDownloadUrl = getDownloadLink(shortFileName);
+        String OAuthKey = props.OAuthKey();
         HttpResponse<String> response2 = null;
         try {
             response2 = Unirest.get(fileDownloadUrl)
@@ -266,22 +270,27 @@ public class DivsCoreData {
                     .asString();
         } catch (Exception e) {
             logger.log(Level.SEVERE, "скачивание файла завершилось с ошибкой");
-//            return null;
         }
         if (response2.getStatus() == 200) {
             String fileContents = response2.getBody();
+            String fullFileName = Configuration.reportsFolder + "\\pclist.txt";
             FileUtils.write(new File(fullFileName),fileContents,"UTF-8");
             logger.log(Level.INFO, "файл успешно загружен на диск");
         }
     }
 
-    public void uploadFileToDisk() throws IOException {
+    public void uploadFileToDisk(String shortFileName) throws IOException {
         String diskAPI_URL = props.diskAPIURL();
         String OAuthKey = props.OAuthKey();
         HttpResponse<JsonNode> response1 = null;
-        String location = "disk:/Приложения/dividendscreener/pclist.txt";
-        String fullFileName = Configuration.reportsFolder + "\\pclist.txt";
-        String fileContents = FileUtils.readFileToString(new File(fullFileName), "UTF-8");
+        String fileContents = null; byte[] bytes = null;
+        String location = "disk:/Приложения/dividendscreener/" + shortFileName;
+        String fullFileName = Configuration.reportsFolder + "\\" + shortFileName;
+        if (shortFileName.contains(".txt"))
+            fileContents = FileUtils.readFileToString(new File(fullFileName), "UTF-8");
+        if (shortFileName.contains(".pdf"))
+            bytes = FileUtils.readFileToByteArray(new File(fullFileName));
+        //преобразуем разделитель папок в имени файла в спецсимволы
         fullFileName = fullFileName.replace("\\","%2F");
 //        String fileNameEncoded = Base64.getUrlEncoder().encodeToString(fullFileName.getBytes());
         try {
@@ -299,17 +308,32 @@ public class DivsCoreData {
         JSONArray jsonArray = response1.getBody().getArray();
         String fileUploadUrl = jsonObject.getString("href");
 
+        //отправляем файл на диск в зависимости от его типа
         HttpResponse<JsonNode> response2 = null;
-        try {
-            response2 = Unirest.put(fileUploadUrl)
-                    .header("Accept", "application/json")
-                    .header("Content-Type", "application/json")
-                    .header("Authorization", "OAuth " + OAuthKey)
-                    .body(fileContents)
-                    .asJson();
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "закачка файла завершилась с ошибкой");
-//            return null;
+        if (shortFileName.contains(".txt")) {
+            try {
+                response2 = Unirest.put(fileUploadUrl)
+                        .header("Accept", "application/json")
+                        .header("Content-Type", "application/json")
+                        .header("Authorization", "OAuth " + OAuthKey)
+                        .body(fileContents)
+                        .asJson();
+            } catch (Exception e) {
+                logger.log(Level.SEVERE, "закачка файла завершилась с ошибкой");
+            }
+        }
+
+        if (shortFileName.contains(".pdf")) {
+            try {
+                response2 = Unirest.put(fileUploadUrl)
+                        .header("Accept", "application/json")
+                        .header("Content-Type", "application/json")
+                        .header("Authorization", "OAuth " + OAuthKey)
+                        .body(bytes)
+                        .asJson();
+            } catch (Exception e) {
+                logger.log(Level.SEVERE, "закачка файла завершилась с ошибкой");
+            }
         }
         logger.log(Level.INFO, "файл успешно загружен на диск");
     }
@@ -340,24 +364,26 @@ public class DivsCoreData {
         return flag;
     }
 
-    public void SetUp() throws Exception {
-        logger.log(Level.INFO,"считываем параметры проекта из properties файлов...");
-//        String path = Base.class.getProtectionDomain().getCodeSource().getLocation().getPath();
-//        String decodedPath = URLDecoder.decode(path,"UTF-8");
-        //определяем индивидуальные параметры
-        File file = new File(DivsCoreData.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath());
-        String currentWorkingDir = file.getParentFile().getPath();
+    public void getProps(String currentWorkingDir) throws Exception {
         String propsFilePath = currentWorkingDir + "\\dividendScreener.properties";
         String paramsFile = FileUtils.readFileToString(new File(propsFilePath), "UTF-8");
         props = new Props(paramsFile);
         //задаем папку для выгрузки файла MS Excel со списком дивидендных компаний и скриншотов с ошибками
         Configuration.reportsFolder = currentWorkingDir;
+    }
+
+    public void SetUp() throws Exception {
+        logger.log(Level.INFO,"считываем параметры проекта из properties файлов...");
+        //определяем индивидуальные параметры
+        File file = new File(DivsCoreData.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath());
+        String currentWorkingDir = file.getParentFile().getPath();
+        getProps(currentWorkingDir);
         //задаем режим логирования сообщений в лог файл
         logInit(currentWorkingDir + "\\dividendScreener_1.0.log");
         logger.log(Level.INFO, "");
         logger.log(Level.INFO, "");
         //проверяем пользователя на наличие активной абонентской платы
-        fileDownload();
+        fileDownload("pclist.txt");
         boolean isToContinueWork = checkUserIsEnabled();
         if (!isToContinueWork) System.exit(1);
 //        //считываем локаторы

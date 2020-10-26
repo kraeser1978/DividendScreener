@@ -3,25 +3,36 @@ package Common;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.itextpdf.text.Document;
+import com.itextpdf.text.DocumentException;
+import com.itextpdf.text.Phrase;
+import com.itextpdf.text.pdf.PdfPCell;
+import com.itextpdf.text.pdf.PdfPTable;
+import com.itextpdf.text.pdf.PdfWriter;
 import com.mashape.unirest.http.HttpResponse;
 import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.math3.util.Precision;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
-
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.logging.Logger;
-
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
+import static jp.qpg.ExcelTo.pdf;
 
 public class MOEXData {
     private static Logger logger = Logger.getLogger(MOEXData.class.getSimpleName());
@@ -35,14 +46,14 @@ public class MOEXData {
     String someTimeAgoStr,prevDateStr = null;
     ArrayList<String> prevDates = new ArrayList<>();
     DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
-    String currentWorkingDir = null;
+    public String currentWorkingDir = null;
 
     @Test
-    public void filterStocksForAllTimeFrames() throws ParseException {
+    public void filterStocksForAllTimeFrames() throws Exception {
         //фильтруем по капитализации
         filterByCompanyCap();
         //фильтруем по месячному объему торгов
-        filterByMonthlyTradeVolume();
+        filterByYearlyTradeVolume();
         //фильтруем по разным временным интервалам
         filterStocksFor3MonthsTimeFrame();
         filterStocksFor1YearTimeFrame();
@@ -50,7 +61,139 @@ public class MOEXData {
         findCommonStocksInAllTimeFrames();
         dumpResultsToJSON();
         sortStocksByGrowthRate();
-        formatResultsAndSendToTelegram();
+//        formatResultsAndSendToTelegram();
+        String excelReport = generateExcelReport();
+        String pdfReport = convertExcel2PDF(excelReport);
+//        divsCoreData.uploadFileToDisk(pdfReport);
+//        String downloadLink = divsCoreData.getDownloadLink(pdfReport);
+        Telegram telegram = new Telegram();
+        telegram.sendFile(currentWorkingDir,pdfReport);
+    }
+
+    public String generateExcelReport() throws IOException {
+        String reportTemplateName = currentWorkingDir + "\\RussianOutPerformingStocksScreenerResults.xlsx";
+        File excelTemplate = new File(reportTemplateName);
+        FileInputStream file = new FileInputStream(excelTemplate);
+        XSSFWorkbook book = new XSSFWorkbook(file);
+        XSSFSheet sheet = book.getSheet("ScreenerResults");
+        int rowNum = 3;//определяем порядковый номер первой строки, в которую нужно начинать запись данных
+        int columnSeqNo  = sheet.getRow(rowNum).getLastCellNum();//определяем последнюю заполненную колонку в первой пустой строке
+        DivsExcelData divsExcelData = new DivsExcelData();
+        for (int i = 0; i < growthStocks.size(); i++){
+            String ticker = growthStocks.get(i).getTicker();
+            String threeM = "+" + Double.toString(growthStocks.get(i).getThreeMonthsGrowthRate()) + "%";
+            String oneY = "+" + Double.toString(growthStocks.get(i).getOneYearGrowthRate()) + "%";
+            String threeY = "+" + Double.toString(growthStocks.get(i).getThreeYearsGrowthRate()) + "%";
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),0,ticker);
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),1,threeM);
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),2,oneY);
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),3,threeY);
+            rowNum++;
+        }
+        String newReportName = "";
+        Calendar cal = Calendar.getInstance();
+        Date today = cal.getTime();
+        //сохраняем текущую дату в заголовке отчета
+        DateFormat df = new SimpleDateFormat("dd-MM-yyyy");
+        String t = df.format(today);
+        divsExcelData.setStrValueToReportCell(sheet.getRow(0),3,"dated " + t);
+        //задаем дату для шаблона имени нового файла отчета
+        DateFormat dateFormat = new SimpleDateFormat("dd_MM_yyyy_hh_mm");
+        String newDateStr = dateFormat.format(today);
+        int extPos = reportTemplateName.indexOf(".xlsx");
+        newReportName = reportTemplateName.substring(0,extPos) + "_" + newDateStr + ".xlsx";
+        FileOutputStream fos = new FileOutputStream(newReportName);
+        book.write(fos);
+        book.close();
+        fos.close();
+        file.close();
+        return newReportName;
+    }
+
+    public void convertExcel2PDF2(String sourceExcel, String targetPDF){
+        int count = 0;
+        try (InputStream in = Files.newInputStream(Paths.get(sourceExcel));
+             Workbook book = WorkbookFactory.create(in);
+             OutputStream out = Files.newOutputStream(Paths.get(targetPDF)))
+//             OutputStream outText = Files.newOutputStream(Paths.get(toTextPath)))
+        {
+            logger.info("processing: " + sourceExcel);
+            pdf(book, out, printer -> {
+                printer.setPageSize(PDRectangle.A4, false);
+                printer.setFontSize(10.5f);
+                printer.setMargin(15);
+                printer.setLineSpace(5);
+                printer.setDrawMarginLine(true);
+            });
+            logger.info("converted: " + sourceExcel + ", " + targetPDF);
+            count++;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    public String convertExcel2PDF(String sourceExcel) throws IOException, DocumentException {
+        //First we read the Excel file in binary format into FileInputStream
+        FileInputStream input_document = new FileInputStream(new File(sourceExcel));
+        // Read workbook into HSSFWorkbook
+        XSSFWorkbook my_xls_workbook = new XSSFWorkbook (input_document);
+        // Read worksheet into HSSFSheet
+        XSSFSheet my_worksheet = my_xls_workbook.getSheetAt(0);
+        // To iterate over the rows
+        Iterator<Row> rowIterator = my_worksheet.iterator();
+        //We will create output PDF document objects at this point
+        Document iText_xls_2_pdf = new Document();
+        int extPos = sourceExcel.indexOf(".xlsx");
+        String targetPDF = sourceExcel.substring(0,extPos) + ".pdf";
+        PdfWriter.getInstance(iText_xls_2_pdf, new FileOutputStream(targetPDF));
+        iText_xls_2_pdf.open();
+        //we have two columns in the Excel sheet, so we create a PDF table with two columns
+        //Note: There are ways to make this dynamic in nature, if you want to.
+        PdfPTable my_table = new PdfPTable(4);
+        //We will use the object below to dynamically add new data to the table
+        PdfPCell table_cell; PdfPCell table_num_cell;
+        //Loop through rows.
+        while(rowIterator.hasNext()) {
+            Row row = rowIterator.next();
+            Iterator<Cell> cellIterator = row.cellIterator();
+            while(cellIterator.hasNext()) {
+                Cell cell = cellIterator.next(); //Fetch CELL
+                CellType cellType = cell.getCellType();
+                switch(cellType) { //Identify CELL type
+                    //you need to add more code here based on
+                    //your requirement / transformations
+                    case STRING:
+                        //Push the data from Excel to PDF Cell
+                        table_cell=new PdfPCell(new Phrase(cell.getStringCellValue()));
+                        int test = cell.getColumnIndex();
+                        //выравнивание по левому краю для первой колонки с тикерами
+                        if (test == 0)
+                            table_cell.setHorizontalAlignment(0);
+                        //для остальных полей выравнивания по правому краю
+                        else
+                            table_cell.setHorizontalAlignment(2);
+                        //feel free to move the code below to suit to your needs
+                        my_table.addCell(table_cell);
+                        break;
+                    case NUMERIC:
+                        //Push the data from Excel to PDF Cell
+                        table_num_cell = new PdfPCell(new Phrase((float) cell.getNumericCellValue()));
+                        //feel free to move the code below to suit to your needs
+                        my_table.addCell(table_num_cell);
+                        break;
+                }
+                //next line
+            }
+        }
+        //Finally add the table to PDF document
+        iText_xls_2_pdf.add(my_table);
+        iText_xls_2_pdf.close();
+        //we created our pdf file..
+        input_document.close(); //close xls
+        //возвращаем краткое имя PDF файла
+        int pos = targetPDF.lastIndexOf("\\");
+        String shortPDF = targetPDF.substring(pos+1);
+        return targetPDF;
     }
 
     private void findCommonStocksInAllTimeFrames() {
@@ -85,7 +228,6 @@ public class MOEXData {
         }
     }
 
-    @Test
     public void sortStocksByGrowthRate(){
         getWorkingDir();
         //считываем данные из исходного файла, если лист не заполнен данными
@@ -136,7 +278,7 @@ public class MOEXData {
             String threeY = Double.toString(growthStocks.get(i).getThreeYearsGrowthRate());
             output = output + ticker + "%20%20%2B" + threeM + "%25%20%20%2B" + oneY + "%25%20%20%2B" + threeY + "%25,%0A%0D";
         }
-        telegram.sendToTelegram2(header1+header2+output);
+        telegram.sendText(header1+header2+output);
     }
 
     public void filterStocksFor3YearsTimeFrame() throws ParseException {
@@ -203,47 +345,29 @@ public class MOEXData {
             totalList = totalList + "," + currentTicker;
         }
         //отправляем список в телеграм канал
-        telegram.sendToTelegram(totalList);
+        telegram.sendString(totalList);
     }
 
-    public void filterByMonthlyTradeVolume(){
+    public void filterByYearlyTradeVolume(){
         HttpResponse<JsonNode> response = null;String result = null;
         ArrayList<ArrayList<String>> copyOfallMOEXStocks = new ArrayList<ArrayList<String>>();
-        JSONObject jsonObject = null;JSONArray jsonArray = null,mData = null;
-        String ticker = null;
-//        double tradeVolume = 0; double monthlyVolume = 0;double minTurnOverLimit = 200000000 / 12;
-        long minTurnOverLimit = 200000000 / 12;
+        String ticker = null;long minTurnOverLimit = 200000000;
         //определяем начальную дату
         Calendar cal = Calendar.getInstance();
         Date today = cal.getTime();
-        cal.add(Calendar.MONTH,-1);
-        Date oneMonthAgo = cal.getTime();
-        String oneMonthStr = dateFormat.format(oneMonthAgo);
+        cal.add(Calendar.YEAR,-1);
+        Date oneYearAgo = cal.getTime();
+        String oneYearStr = dateFormat.format(oneYearAgo);
         String todayStr = dateFormat.format(today);
-//        ArrayList<String> ticToFind = new ArrayList<>();
-//        ticToFind.add("AFLT");
-//        ticToFind.add("MGNZ");
-//        ticToFind.add("KMEZ");
-//        ticToFind.add("KTSB");
+        ArrayList<HttpResponse<JsonNode>> responses = new ArrayList<>();
         for (int n = 0; n < allMOEXStocks.size(); n++){
-            long tradeVolume = 0; long monthlyVolume = 0;
             ticker = allMOEXStocks.get(n).get(0);
-//            if (ticToFind.contains(ticker))
-//                logger.log(INFO,"нашел");
-            response = getCompanyTradeVolumeData(ticker,oneMonthStr,todayStr);
-            jsonObject = response.getBody().getObject().getJSONObject("history");
-            jsonArray = jsonObject.getJSONArray("data");
-            if (jsonArray.toString().equals("[]"))
-                continue;
-            for (int i = 0; i< jsonArray.length(); i++){
-                mData = jsonArray.getJSONArray(i);
-//                tradeVolume = mData.getDouble(5);
-                tradeVolume = mData.getLong(5);
-                monthlyVolume = monthlyVolume + tradeVolume;
-            }
-            if (monthlyVolume > minTurnOverLimit){
-//                String vol = Double.toString(monthlyVolume);
-                String vol = Long.toString(monthlyVolume);
+            //запрашиваем данные по обороту за годовой интервал в ежедневном разрезе
+            long yearlyVolume = getCompanyTradeVolumeData(ticker,oneYearStr,todayStr);
+            //сравнение суммарного торгового оборота за год с минимальным значением
+            //если оборот больше минимума - добавляем компанию в выборку
+            if (yearlyVolume > minTurnOverLimit){
+                String vol = Long.toString(yearlyVolume);
                 allMOEXStocks.get(n).add(vol);
                 copyOfallMOEXStocks.add(allMOEXStocks.get(n));
             }
@@ -464,17 +588,38 @@ public class MOEXData {
         return response;
     }
 
-    private HttpResponse<JsonNode> getCompanyTradeVolumeData(String ticker,String dateFrom, String dateTill){
-        HttpResponse<JsonNode> response = null;
-        try {
-            response = Unirest.get("http://iss.moex.com/iss/history/engines/stock/markets/shares/boards/tqbr/securities/" + ticker + ".json?from=" +
-                    dateFrom + "&till=" + dateTill)
-                    .asJson();
-        } catch (Exception e) {
-            logger.log(SEVERE, "запрос к рыночным данным ММВБ по тикеру " + ticker + " отработал с ошибкой");
-            response = null;
-        }
-        logger.log(INFO, "данные по тикеру " + ticker + " считаны успешно");
-        return response;
+    private Long getCompanyTradeVolumeData(String ticker,String dateFrom, String dateTill){
+        int resultPageCounter = 0;HttpResponse<JsonNode> response;
+        JSONObject jsonObject = null;JSONArray jsonArray = null,mData = null;
+        long tradeVolume = 0; long yearlyVolume = 0;
+        boolean flag;
+        do {
+            String counter = Integer.toString(resultPageCounter);
+            try {
+                response = Unirest.get("http://iss.moex.com/iss/history/engines/stock/markets/shares/boards/tqbr/securities/" + ticker + ".json?from=" +
+                        dateFrom + "&till=" + dateTill + "&start=" + counter)
+                        .asJson();
+            } catch (Exception e) {
+                logger.log(SEVERE, "запрос к рыночным данным ММВБ по тикеру " + ticker + " отработал с ошибкой");
+                response = null;
+            }
+            //парсим данные из ответного сообщения
+            jsonObject = response.getBody().getObject().getJSONObject("history");
+            jsonArray = jsonObject.getJSONArray("data");
+            //проверяем, есть ли в ответе данные
+            flag = jsonArray.toString().equals("[]");
+            //если ответ пустой - пропускаем тикер и выходим из цикла
+            if (flag)
+                return yearlyVolume;
+            //если данные есть - суммируем торговый оборот за все выбранные торговые дни в рамках годового интервала
+            for (int i = 0; i< jsonArray.length(); i++){
+                mData = jsonArray.getJSONArray(i);
+                tradeVolume = mData.getLong(5);
+                yearlyVolume = yearlyVolume + tradeVolume;
+            }
+            logger.log(INFO, "данные по тикеру " + ticker + " считаны успешно");
+            resultPageCounter = resultPageCounter +100;
+        } while (flag == false);
+        return yearlyVolume;
     }
 }

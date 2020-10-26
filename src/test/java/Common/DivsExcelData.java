@@ -48,7 +48,7 @@ public class DivsExcelData {
         return tickersFromExcel;
     }
 
-    private void setStrValueToReportCell(Row row, int columnSeqNo, String value){
+    public void setStrValueToReportCell(Row row, int columnSeqNo, String value){
         Cell cell = row.getCell(columnSeqNo);
         if (cell == null) {
             cell = row.createCell(columnSeqNo);
@@ -56,7 +56,7 @@ public class DivsExcelData {
         cell.setCellValue(value);
     }
 
-    private void setStrValueToReportCell(Row row, int columnSeqNo, Double value){
+    public void setStrValueToReportCell(Row row, int columnSeqNo, Double value){
         Cell cell = row.getCell(columnSeqNo);
         if (cell == null) {
             cell = row.createCell(columnSeqNo);

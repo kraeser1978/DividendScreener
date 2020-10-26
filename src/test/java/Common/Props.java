@@ -116,4 +116,8 @@ public class Props {
     public String finnhubToken(){
         return properties.getProperty("Finnhub_token");
     }
+
+    public String telegramBotTtoken(){
+        return properties.getProperty("telegram_bot_token");
+    }
 }
