@@ -106,9 +106,9 @@ public class Base {
     public void reportsGeneration() throws Exception {
         logger.log(Level.INFO, "формирование отчета с результатами отбора компаний...");
         rapidAPIData.sortStockList();
-        String excelReport = divsExcelData.generateExcelReport2(rapidAPIData.stocksListMap);
+        String excelReport = divsExcelData.generateExcelReport(rapidAPIData.stocksListMap);
         Unirest.shutdown();
         logger.log(Level.INFO, "отчет сформирован в файле " + excelReport);
-        sendReportByEmail(excelReport);
+//        sendReportByEmail(excelReport);
     }
 }

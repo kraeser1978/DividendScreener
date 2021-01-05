@@ -563,67 +563,42 @@ public class RapidAPIData {
     }
 
     public void sortStockList(){
-        LinkedHashMap<String, Integer> criteriaPassedMap = new LinkedHashMap<>();
-        LinkedHashMap<String, Integer> sortedStockMap = new LinkedHashMap<>();
         LinkedHashMap<String, Stocks> copyOfStocksListMap = new LinkedHashMap<>();
-        //вычисляем кол-во успешно выполненных критериев по каждой компании
-        for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet()){
-            int countPassed = entry.getValue().calcCountOfPassedTests();
-            criteriaPassedMap.put(entry.getKey(),countPassed);
-        }
-        //сортируем по кол-ву успешно выполненных критериев - от самых лучших компаний к худшим
-        List<Map.Entry<String, Integer>> list = new ArrayList<Map.Entry<String, Integer>>(criteriaPassedMap.entrySet());
-        list.sort(Map.Entry.comparingByValue());
-        Collections.reverse(list);
-        //удаляем лишние компании из оставшегося списка
-        int stocksNumLimit = Integer.parseInt(props.maximumNumberOfStocks());
-        int delta = list.size() - stocksNumLimit;
-        int originalSize = list.size();
-        for (int i = 1; i< delta+1; i++){
-            list.remove(originalSize - i);
-        }
-//        LinkedHashMap<String, Double> yieldMap = new LinkedHashMap<>();
-//        LinkedHashMap<String, Double> sortedYieldMap = new LinkedHashMap<>();
-//        //сортируем по убыванию Yield для компаний с одинаковым количеством выполненных критериев
-//        for (int t=11; t > 7; t--){
-//            //вычисляем кол-во компаний с определенным числом выполненных критериев
-//            for(Map.Entry<String, Integer> entry : list){
-//                int criteria = entry.getValue();
-//                int criteriaCount = Collections.frequency(entry.getKey(), t);
-//            }
-//
-//
-//            int s = 0;
-//            for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet()){
-//                if (s < criteriaCount){
-//                    Double yield = entry.getValue().getYield();
-//                    yieldMap.put(entry.getKey(),yield);
-//                }
-//                s++;
-//            }
-//            //сортируем по Yield по убыванию
-//            List<Map.Entry<String, Double>> yieldList = new ArrayList<Map.Entry<String, Double>>(yieldMap.entrySet());
-//            yieldList.sort(Map.Entry.comparingByValue());
-//            Collections.reverse(yieldList);
-//            //конвертируем лист в хешмап
-//            for (Map.Entry<String, Double> entry : yieldList) {
-//                sortedYieldMap.put(entry.getKey(), entry.getValue());
-//            }
-//            //копируем объекты из оригинального хешмапа в урезанный и отсортированный список
-//            for (Map.Entry<String, Double> entry : sortedYieldMap.entrySet()){
-//                String key = entry.getKey();
-//                Stocks stocks = stocksListMap.get(key);
-//                copyOfStocksListMap.put(key,stocks);
-//            }
-//        }
+        ArrayList<Stocks> stocksList = new ArrayList<>();
+        //заполняем лист
+        for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet())
+            stocksList.add(entry.getValue());
+//        //вычисляем кол-во успешно выполненных критериев по каждой компании
+//        BeanComparator bc = new BeanComparator(Stocks.class, "calcCountOfPassedTests",false);
+//        //сортируем по кол-ву успешно выполненных критериев - от самых лучших компаний к худшим
+//        Collections.sort(stocksList, bc);
+        //сортируем по доходности
+        BeanComparator bc2 = new BeanComparator(Stocks.class, "getYield",false);
+        Collections.sort(stocksList,bc2);
 
-        //конвертируем лист в хешмап
-        for (Map.Entry<String, Integer> entry : list) {
-                sortedStockMap.put(entry.getKey(), entry.getValue());
+//        for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet()){
+//            Stocks stocks = entry.getValue();
+//            int count = stocks.calcCountOfPassedTests();
+//            stocks.setCountOfPassedTests(count);
+//            stocksList.add(stocks);
+//        }
+//        ColumnComparator cc1 = new ColumnComparator(5,false);
+//        ColumnComparator cc2 = new ColumnComparator(3, false);
+//        GroupComparator gc = new GroupComparator(cc1, cc2);
+//        Collections.sort(stocksList, gc);
+
+        int stocksNumLimit = Integer.parseInt(props.maximumNumberOfStocks());
+        int originalSize = stocksList.size();
+        //удаляем лишние компании из оставшегося списка
+        if (originalSize > stocksNumLimit) {
+            int delta = originalSize - stocksNumLimit;
+            for (int i = 1; i< delta+1; i++){
+                stocksList.remove(originalSize - i);
+            }
         }
         //копируем объекты из оригинального хешмапа в урезанный и отсортированный список
-        for (Map.Entry<String, Integer> entry : sortedStockMap.entrySet()){
-            String key = entry.getKey();
+        for (int i = 0; i <stocksList.size(); i++) {
+            String key = stocksList.get(i).getTicker();
             Stocks stocks = stocksListMap.get(key);
             copyOfStocksListMap.put(key,stocks);
         }
