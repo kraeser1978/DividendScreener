@@ -305,11 +305,11 @@ public class RapidAPIData {
         return  flag;
     }
 
-    public void monthlyFilterByFundamentals() throws IOException, InterruptedException {
+    public void monthlyFilterByFundamentals(String outputFileName) throws IOException, InterruptedException {
         logger.log(Level.INFO, "фильтрация списка компаний по фундаментальным мультипликаторам:");
         logger.log(Level.INFO, "по продолжительности непрерывных дивидендных выплат  - от 15 лет подряд");
         logger.log(Level.INFO, "по marketCap  - от 2 млрд.долл.");
-        String fileName = Configuration.reportsFolder + props.allUSMarketsSourceFile();
+        String fileName = Configuration.reportsFolder + outputFileName;
         int cycles = tickers.size() / 5;
         int remainder = tickers.size() - (cycles * 5);
         int roundSize = tickers.size() - remainder;
@@ -317,11 +317,11 @@ public class RapidAPIData {
         for (int i = 0; i < roundSize; i+=5) { //обработка списка тикеров общим числом кратным 5
             responseWaiter = new CountDownLatch(5);
             getAsyncData(i,i+5);
-            parseAsyncStockSummaryData();
+            parseAsyncStockSummaryData(outputFileName);
         }
         responseWaiter = new CountDownLatch(remainder);//обработка остатка (последняя партия тикеров меньше 5)
         getAsyncData(roundSize,tickers.size());
-        parseAsyncStockSummaryData();
+        parseAsyncStockSummaryData(outputFileName);
         //подкручиваем формат файла для последующего импорта в других сессиях приложения
         String contents = FileUtils.readFileToString(new File(fileName),"UTF-8");
         String newContents = contents.replace("}{","},{");
@@ -359,8 +359,8 @@ public class RapidAPIData {
         return stockObj;
     }
 
-    public void dumpStockToFile(String ticker) throws IOException {
-        String fileName = Configuration.reportsFolder + props.allUSMarketsSourceFile();
+    public void dumpStockToFile(String ticker,String outputFileName) throws IOException {
+        String fileName = Configuration.reportsFolder + outputFileName;
         stockObj = new Stocks();
         stockObj.setTicker(ticker);
         stockObj.setYield(yieldValue);
@@ -383,7 +383,7 @@ public class RapidAPIData {
         FileUtils.write(new File(fileName),contents,"UTF-8",true);
     }
 
-    public void parseAsyncStockSummaryData() throws IOException {
+    public void parseAsyncStockSummaryData(String outputFileName) throws IOException {
         for (HttpResponse entry: stockSummaryDataResponses ) {
             parseStockSummaryData(entry);
             if (includeDividends) {
@@ -393,7 +393,7 @@ public class RapidAPIData {
                         String endDate = getDateAsEpoch(Calendar.YEAR,0);
                         if (getDividendHistoryData(startDate,endDate,ticker)){
                             if (isDividendPaidOffFor15Years(ticker))
-                                dumpStockToFile(ticker);
+                                dumpStockToFile(ticker,outputFileName);
                         }
                     } else logger.log(Level.INFO, "компания " + ticker + " не соответствует критериям по капитализации и/или продолжительности дивидендных выплат");
                 }
@@ -425,11 +425,11 @@ public class RapidAPIData {
         for (int i = 0; i < roundSize; i+=5) { //обработка списка тикеров общим числом кратным 5
             responseWaiter = new CountDownLatch(5);
             getAsyncData(i,i+5);
-            parseAsyncStockSummaryData();
+            parseAsyncStockSummaryData(fileName);
         }
         responseWaiter = new CountDownLatch(remainder);//обработка остатка (последняя партия тикеров меньше 5)
         getAsyncData(roundSize,tickers.size());
-        parseAsyncStockSummaryData();
+        parseAsyncStockSummaryData(fileName);
         mapper.enable(SerializationFeature.INDENT_OUTPUT);
         mapper.writeValue(new File(fullFileName), listOfStocks);
         stocksListMap.clear();
@@ -490,14 +490,15 @@ public class RapidAPIData {
             dividendRate = jsonObject1.getJSONObject("dividendRate");
         } catch (Exception ex1) {
             logger.log(Level.SEVERE, "запрос dividendRate не вернул данные, пробуем поле trailingAnnualDividendRate ...");
-        }
-        if (dividendRate.toString().equals("{}")) {
             try {
                 dividendRate = jsonObject1.getJSONObject("trailingAnnualDividendRate");
-            } catch (Exception ex1) {
+            } catch (Exception ex2) {
                 logger.log(Level.SEVERE, "запрос trailingAnnualDividendRate не вернул данные - пробуем брать значение из полей dividendYield/trailingAnnualDividendYield  ...");
             }
         }
+//        if (dividendRate.toString().equals("{}") || dividendRate == null) {
+//
+//        }
         //если поле dividendRate содержит значение, рассчитываем yield исходя из него и текущей цены акции
         if (dividendRate != null) {
             dividendRateValue = dividendRate.optDouble("raw");

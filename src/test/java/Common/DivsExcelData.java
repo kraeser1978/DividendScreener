@@ -18,6 +18,7 @@ import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static Common.DivsCoreData.props;
 import static java.util.Collections.*;
 
 public class DivsExcelData {
@@ -362,6 +363,24 @@ public class DivsExcelData {
         book.close();
         file.close();
         return sheet;
+    }
+
+    public ArrayList<String> getTickersFromManualExcelFile(String sourceFileName, String sheetName, int colSeqNo, int startRowNum) throws IOException {
+        //метод извлекает список тикеров из мануального файла портфолио
+        ArrayList<String> list = new ArrayList<String>();
+        FileInputStream file = new FileInputStream(Configuration.reportsFolder + sourceFileName);
+        XSSFWorkbook book = new XSSFWorkbook(file);
+        XSSFSheet sheet = book.getSheet(sheetName);
+        int countOfRows = sheet.getLastRowNum() - startRowNum;
+        for (int i = startRowNum; i< countOfRows; i++){
+            Row row = sheet.getRow(i);
+            Cell cell = row.getCell(colSeqNo);
+            String ticker = cell.getStringCellValue();
+            list.add(ticker);
+        }
+        book.close();
+        file.close();
+        return list;
     }
 
     public void getDivsBook(File fileName) throws IOException {

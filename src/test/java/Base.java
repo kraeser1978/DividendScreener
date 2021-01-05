@@ -27,6 +27,22 @@ public class Base {
         preparation();
         excelDataFiltering();
 //        allUSMarketsDataFiltering();
+        String excelReport = reportsGeneration();
+        sendReportByEmail(excelReport);
+    }
+
+    @Test
+    public void manualStocksListFiltering() throws Exception {
+        divsCoreData = new DivsCoreData();
+        divsCoreData.SetUp();
+        rapidAPIData = new RapidAPIData();
+        divsExcelData = new DivsExcelData();
+        rapidAPIData.tickers = divsExcelData.getTickersFromManualExcelFile(props.manualSourceListFile(),"Портфель акций",0,2);
+        rapidAPIData.monthlyFilterByFundamentals(props.manualFilteredListFile());
+        rapidAPIData.filterBySummaryDetails(props.manualFilteredListFile());
+        rapidAPIData.filterByDividendRelatedCriterias();
+        rapidAPIData.compareStockAgainstEthalonETF();
+        rapidAPIData.checkIncomeGrowth();
         reportsGeneration();
     }
 
@@ -94,8 +110,8 @@ public class Base {
         rapidAPIData.cleanUpUSMarketsTickersLists(excelTickers);
         boolean skipMonthlySourceDataUpdate = rapidAPIData.isStockListCanBeReUsed(props.allUSMarketsSourceFile(),30);
         if (!skipMonthlySourceDataUpdate){
-            //если файл с исходным списком акций устарел (более 30 дней) - генерим его
-            rapidAPIData.monthlyFilterByFundamentals();
+            //если файл с исходным списком компаний устарел (более 30 дней) - генерим его
+            rapidAPIData.monthlyFilterByFundamentals(props.allUSMarketsSourceFile());
         }
         rapidAPIData.filterBySummaryDetails(props.allUSMarketsFilteredFile());
         rapidAPIData.filterByDividendRelatedCriterias();
@@ -103,12 +119,12 @@ public class Base {
         rapidAPIData.checkIncomeGrowth();
     }
 
-    public void reportsGeneration() throws Exception {
+    public String reportsGeneration() throws Exception {
         logger.log(Level.INFO, "формирование отчета с результатами отбора компаний...");
         rapidAPIData.sortStockList();
         String excelReport = divsExcelData.generateExcelReport(rapidAPIData.stocksListMap);
         Unirest.shutdown();
         logger.log(Level.INFO, "отчет сформирован в файле " + excelReport);
-//        sendReportByEmail(excelReport);
+        return excelReport;
     }
 }
