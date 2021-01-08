@@ -65,6 +65,14 @@ public class DivsExcelData {
         cell.setCellValue(value);
     }
 
+    public void setStrValueToReportCell(Row row, int columnSeqNo, int value){
+        Cell cell = row.getCell(columnSeqNo);
+        if (cell == null) {
+            cell = row.createCell(columnSeqNo);
+        }
+        cell.setCellValue(value);
+    }
+
     public String generateExcelReport(LinkedHashMap<String, Stocks> selection) throws IOException {
         String reportTemplateName = Configuration.reportsFolder + "\\DividendScreenerResultsTemplate.xlsx";
         File excelTemplate = new File(reportTemplateName);

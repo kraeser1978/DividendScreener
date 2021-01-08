@@ -1,7 +1,5 @@
 package Common;
 
-import java.util.function.DoubleBinaryOperator;
-
 public class GrowthStock {
     public String ticker;
     public String companyName;
@@ -10,6 +8,25 @@ public class GrowthStock {
     public Double threeMonthsGrowthRate;
     public Double oneYearGrowthRate;
     public Double threeYearsGrowthRate;
+    public int lotSize;
+    public Double lastPrice;
+
+    public int getLotSize(){
+        return this.lotSize;
+    }
+
+    public void setLotSize(int lotSize){
+        this.lotSize = lotSize;
+    }
+
+    public Double getLastPrice(){
+        return this.lastPrice;
+    }
+
+    public void setLastPrice(Double lastPrice){
+        this.lastPrice = lastPrice;
+    }
+
 
     public Long getCompanyCapValue(){
         return this.companyCapValue;
@@ -51,7 +68,7 @@ public class GrowthStock {
         this.ticker = ticker;
     }
 
-    public void setCompanyName(){
+    public void setCompanyName(String companyName){
         this.companyName = companyName;
     }
 
