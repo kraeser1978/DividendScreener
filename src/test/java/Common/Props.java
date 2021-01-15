@@ -113,6 +113,14 @@ public class Props {
         return properties.getProperty("excel_filtered_list_short_name");
     }
 
+    public String manualSourceListFile(){
+        return properties.getProperty("manual_list_source_file_short_name");
+    }
+
+    public String manualFilteredListFile(){
+        return properties.getProperty("manual_list_filtered_file_short_name");
+    }
+
     public String finnhubToken(){
         return properties.getProperty("Finnhub_token");
     }

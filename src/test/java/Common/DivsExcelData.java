@@ -18,6 +18,7 @@ import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static Common.DivsCoreData.props;
 import static java.util.Collections.*;
 
 public class DivsExcelData {
@@ -64,34 +65,42 @@ public class DivsExcelData {
         cell.setCellValue(value);
     }
 
-    public String generateExcelReport2(LinkedHashMap<String, Stocks> selection) throws IOException {
+    public void setStrValueToReportCell(Row row, int columnSeqNo, int value){
+        Cell cell = row.getCell(columnSeqNo);
+        if (cell == null) {
+            cell = row.createCell(columnSeqNo);
+        }
+        cell.setCellValue(value);
+    }
+
+    public String generateExcelReport(LinkedHashMap<String, Stocks> selection) throws IOException {
         String reportTemplateName = Configuration.reportsFolder + "\\DividendScreenerResultsTemplate.xlsx";
         File excelTemplate = new File(reportTemplateName);
         FileInputStream file = new FileInputStream(excelTemplate);
         XSSFWorkbook book = new XSSFWorkbook(file);
         XSSFSheet sheet = book.getSheet("ScannerResults");
-        int rowNum = 2;//определяем порядковый номер первой строки, в которую нужно начинать запись данных
-        int columnSeqNo  = sheet.getRow(rowNum).getLastCellNum();//определяем последнюю заполненную колонку в первой пустой строке
-        //заполняем колонки с наименованиями компаний и их базовыми параметрами: тикер, Last Price, Yield
+        int rowNum = 7;//определяем порядковый номер первой строки, в которую нужно начинать запись данных
+        int columnSeqNo  = 0; //определяем первую незаполненную колонку в первой пустой строке
+        //заполняем поля с наименованиями компаний и их базовыми параметрами: тикер, Last Price, Yield
         for (Map.Entry<String, Stocks> entry : selection.entrySet()){
             String ticker = entry.getKey();
             String companyName = entry.getValue().getCompanyName();
             Double lastPrice = entry.getValue().getLastPrice();
             Double yield = entry.getValue().getYield() / 100;
             //заполняем базовые данные по каждой компании сверху вниз
-            setStrValueToReportCell(sheet.getRow(rowNum), columnSeqNo,companyName);
-            setStrValueToReportCell(sheet.getRow(rowNum+1), columnSeqNo,ticker);
-            setStrValueToReportCell(sheet.getRow(rowNum+2), columnSeqNo,lastPrice);
-            setStrValueToReportCell(sheet.getRow(rowNum+3), columnSeqNo,yield);
+            setStrValueToReportCell(sheet.getRow(rowNum), columnSeqNo,ticker);
+            setStrValueToReportCell(sheet.getRow(rowNum), 1,companyName);
+            setStrValueToReportCell(sheet.getRow(rowNum), 2,lastPrice);
+            setStrValueToReportCell(sheet.getRow(rowNum), 3,yield);
             //заполняем статусы по критериям для компании
-            int criteriaStartRowNum = rowNum + 5;
-            int r = criteriaStartRowNum;
+            int criteriaStartColumnNum = 4;
+            int col = criteriaStartColumnNum;
             for (Map.Entry<String, String> criteria : entry.getValue().criteriaExecutionStatuses.entrySet()){
                 String criteriaStatus = criteria.getValue();
-                setStrValueToReportCell(sheet.getRow(r), columnSeqNo,criteriaStatus);
-                r = r + 1;
+                setStrValueToReportCell(sheet.getRow(rowNum), col,criteriaStatus);
+                col = col + 1;
             }
-            columnSeqNo = columnSeqNo + 1;
+            rowNum = rowNum + 1;
         }
         //задаем дату для шаблона имени нового файла отчета
         String newReportName = "";
@@ -170,98 +179,6 @@ public class DivsExcelData {
         }
         criteriaExecutionStatuses.put(testCode,newTestStatus);
         return criteriaExecutionStatuses;
-    }
-
-    public String generateExcelReport(LinkedHashMap<String, Stocks> selection, HashMap<String,String> criteriaExecutionStatuses,String excelTemplateShortName) throws IOException {
-        File excelTemplate = new File(excelTemplateShortName);
-        FileInputStream file = new FileInputStream(excelTemplate);
-        XSSFWorkbook book = new XSSFWorkbook(file);
-        XSSFSheet sheet = book.getSheet("ScannerResults");
-
-        //определяем порядковый номер колонки, в которую нужно начинать запись данных
-        Row companyNamesRow = sheet.getRow(2);
-        //определяем последнюю заполненную колонку с наименованием компании (первая или вторая выборка)
-        int columnSeqNo  = companyNamesRow.getLastCellNum();
-        Row tickersRow = sheet.getRow(3);
-        Row lastPriceRow = sheet.getRow(4);
-        Row yieldRow = sheet.getRow(5);
-        int columnSeqNoOriginal = columnSeqNo;
-
-        //заполняем колонки с наименованиями компаний и их базовыми параметрами: тикер, Last Price, Yield
-        for (Map.Entry<String, Stocks> entry : selection.entrySet()){
-            String ticker = entry.getKey();
-            String companyName = entry.getValue().getCompanyName();
-            Double lastPrice = entry.getValue().getLastPrice();
-            Double yield = entry.getValue().getYield() / 100;
-            //заполняем строку с наименованиями компаний
-            Cell companyNamesRowCell = companyNamesRow.getCell(columnSeqNo);
-            if (companyNamesRowCell == null) {
-                companyNamesRowCell = companyNamesRow.createCell(columnSeqNo);
-            }
-            companyNamesRowCell.setCellValue(companyName);
-            //заполняем строку с тикерами компаний
-            Cell tickersRowCell = tickersRow.getCell(columnSeqNo);
-            if (tickersRowCell == null) {
-                tickersRowCell = tickersRow.createCell(columnSeqNo);
-            }
-            tickersRowCell.setCellValue(ticker);
-            //заполняем строку с Last Price
-            Cell lastPriceRowCell = lastPriceRow.getCell(columnSeqNo);
-            if (lastPriceRowCell == null) {
-                lastPriceRowCell = lastPriceRow.createCell(columnSeqNo);
-            }
-            lastPriceRowCell.setCellValue(lastPrice);
-            //заполняем строку с Yield
-            Cell yieldRowCell = yieldRow.getCell(columnSeqNo);
-            if (yieldRowCell == null) {
-                yieldRowCell = yieldRow.createCell(columnSeqNo);
-            }
-            yieldRowCell .setCellValue(yield);
-            columnSeqNo = columnSeqNo + 1;
-        }
-
-        //заполняем статусы по критериям для выборки компаний
-        columnSeqNo = columnSeqNoOriginal;
-        int startRow = 7;
-        for (Map.Entry<String, String> entry : criteriaExecutionStatuses.entrySet()){
-            String key = entry.getKey();
-            Row row = sheet.getRow(startRow);
-            Cell criteria = row.getCell(0);
-            CellType cellType = criteria.getCellType();
-            if (cellType.name() == "STRING") {
-                String criteriaName = criteria.getStringCellValue();
-                if (criteriaName.equals(key)) {
-                    //если строка с критерием найдена, заполняем статусы для компаний
-                    String executionStatus = entry.getValue();
-                    int lastColumn = columnSeqNo + selection.size();
-                    for (int i = columnSeqNo; i < lastColumn;i++){
-                        //заполняем строку статусами
-                        Cell c = row.getCell(i);
-                        if (c == null) {
-                            c = row.createCell(i);
-                        }
-                        c.setCellValue(executionStatus);
-                    }
-                }
-            }
-            startRow = startRow + 1;
-        }
-        //задаем дату для шаблона имени нового файла отчета
-        String newReportName = "";
-        if (!excelTemplateShortName.contains("_")){
-            Calendar cal = Calendar.getInstance();
-            Date today = cal.getTime();
-            DateFormat dateFormat = new SimpleDateFormat("dd_MM_yyyy_hh_mm");
-            String newDateStr = dateFormat.format(today);
-            int extPos = excelTemplateShortName.indexOf(".xlsx");
-            newReportName = excelTemplateShortName.substring(0,extPos) + "_" + newDateStr + ".xlsx";
-        } else newReportName = excelTemplateShortName;
-        FileOutputStream fos = new FileOutputStream(newReportName);
-        book.write(fos);
-        book.close();
-        fos.close();
-        file.close();
-        return newReportName;
     }
 
     public HashMap<String,String> setDefaultExecutionStatus(String testStatus){
@@ -454,6 +371,24 @@ public class DivsExcelData {
         book.close();
         file.close();
         return sheet;
+    }
+
+    public ArrayList<String> getTickersFromManualExcelFile(String sourceFileName, String sheetName, int colSeqNo, int startRowNum) throws IOException {
+        //метод извлекает список тикеров из мануального файла портфолио
+        ArrayList<String> list = new ArrayList<String>();
+        FileInputStream file = new FileInputStream(Configuration.reportsFolder + sourceFileName);
+        XSSFWorkbook book = new XSSFWorkbook(file);
+        XSSFSheet sheet = book.getSheet(sheetName);
+        int countOfRows = sheet.getLastRowNum() - startRowNum;
+        for (int i = startRowNum; i< countOfRows; i++){
+            Row row = sheet.getRow(i);
+            Cell cell = row.getCell(colSeqNo);
+            String ticker = cell.getStringCellValue();
+            list.add(ticker);
+        }
+        book.close();
+        file.close();
+        return list;
     }
 
     public void getDivsBook(File fileName) throws IOException {

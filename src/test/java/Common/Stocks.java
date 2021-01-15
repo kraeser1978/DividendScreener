@@ -4,20 +4,25 @@ import java.util.*;
 
 import static Common.DivsCoreData.props;
 
-public class Stocks implements Comparable <Stocks>{
+public class Stocks {
     public String companyName;
     public String ticker;
     public Double lastPrice;
     public Double yield;
     public Double pe;
+    public int countOfPassedTests;
     public LinkedHashMap<String,String> criteriaExecutionStatuses = new LinkedHashMap<>();
 
     public Stocks(){
         setDefaultExecutionStatus();
     }
 
-    public int compareTo(Stocks o) {
-        return this.getYield().compareTo(o.getYield());
+    public void setCountOfPassedTests(int countOfPassedTests) {
+        this.countOfPassedTests = calcCountOfPassedTests();
+    }
+
+    public int getCountOfPassedTests() {
+        return countOfPassedTests;
     }
 
     public int calcCountOfPassedTests(){

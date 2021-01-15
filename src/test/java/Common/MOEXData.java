@@ -61,33 +61,77 @@ public class MOEXData {
         findCommonStocksInAllTimeFrames();
         dumpResultsToJSON();
         sortStocksByGrowthRate();
-//        formatResultsAndSendToTelegram();
+        addAttributeDataToSelection();
         String excelReport = generateExcelReport();
-        String pdfReport = convertExcel2PDF(excelReport);
-//        divsCoreData.uploadFileToDisk(pdfReport);
-//        String downloadLink = divsCoreData.getDownloadLink(pdfReport);
+//        String pdfReport = convertExcel2PDF(excelReport);
         Telegram telegram = new Telegram();
-        telegram.sendFile(currentWorkingDir,pdfReport);
+        telegram.sendFile(currentWorkingDir,excelReport);
+    }
+
+    public void addAttributeDataToSelection(){
+        HttpResponse<JsonNode> response = null;
+        JSONObject jsonObject,jsonObject2 = null;JSONArray jsonArray,jsonArray2,securityData,marketData = null;
+        String currentTicker, selectedTicker,fullName = null;int lotSize = 0; Double lastPrice = null;
+        response = getCompanyCurrentMarketData();
+        jsonObject = response.getBody().getObject().getJSONObject("securities");
+        jsonObject2 = response.getBody().getObject().getJSONObject("marketdata");
+        jsonArray = jsonObject.getJSONArray("data");
+        jsonArray2 = jsonObject2.getJSONArray("data");
+        //заполняем лист объектов доп полями: Название компании, размер лота
+        for (int i = 0; i< jsonArray.length(); i++){
+            securityData = jsonArray.getJSONArray(i);
+            currentTicker = securityData.getString(0);
+            for (int t = 0; t < growthStocks.size(); t++){
+                selectedTicker = growthStocks.get(t).getTicker();
+                if (selectedTicker.equals(currentTicker)){
+                    fullName = securityData.getString(9);
+                    lotSize = securityData.getInt(4);
+                    growthStocks.get(t).setCompanyName(fullName);
+                    growthStocks.get(t).setLotSize(lotSize);
+                    break;
+                }
+            }
+        }
+        //заполняем лист объектов доп полями: last price
+        for (int i = 0; i< jsonArray2.length(); i++){
+            marketData = jsonArray2.getJSONArray(i);
+            currentTicker = marketData.getString(0);
+            for (int t = 0; t < growthStocks.size(); t++){
+                selectedTicker = growthStocks.get(t).getTicker();
+                if (selectedTicker.equals(currentTicker)){
+                    lastPrice = marketData.getDouble(12);
+                    growthStocks.get(t).setLastPrice(lastPrice);
+                }
+            }
+        }
+        logger.log(INFO,"данные по дополнительным полям добавлены к массиву объектов: Название компании, размер лота, last price");
     }
 
     public String generateExcelReport() throws IOException {
-        String reportTemplateName = currentWorkingDir + "\\RussianOutPerformingStocksScreenerResults.xlsx";
+        String reportTemplateName = currentWorkingDir + "\\IMOEXOutPerformingStocks.xlsx";
         File excelTemplate = new File(reportTemplateName);
         FileInputStream file = new FileInputStream(excelTemplate);
         XSSFWorkbook book = new XSSFWorkbook(file);
         XSSFSheet sheet = book.getSheet("ScreenerResults");
         int rowNum = 3;//определяем порядковый номер первой строки, в которую нужно начинать запись данных
-        int columnSeqNo  = sheet.getRow(rowNum).getLastCellNum();//определяем последнюю заполненную колонку в первой пустой строке
         DivsExcelData divsExcelData = new DivsExcelData();
         for (int i = 0; i < growthStocks.size(); i++){
             String ticker = growthStocks.get(i).getTicker();
+            String companyName = growthStocks.get(i).getCompanyName();
+            Double lastPrice = growthStocks.get(i).getLastPrice();
+            int lotSize = growthStocks.get(i).getLotSize();
+            Double lotCost = lastPrice * lotSize;
             String threeM = "+" + Double.toString(growthStocks.get(i).getThreeMonthsGrowthRate()) + "%";
             String oneY = "+" + Double.toString(growthStocks.get(i).getOneYearGrowthRate()) + "%";
             String threeY = "+" + Double.toString(growthStocks.get(i).getThreeYearsGrowthRate()) + "%";
             divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),0,ticker);
-            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),1,threeM);
-            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),2,oneY);
-            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),3,threeY);
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),1,companyName);
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),2,lastPrice);
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),3,lotSize);
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),4,lotCost);
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),5,threeM);
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),6,oneY);
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),7,threeY);
             rowNum++;
         }
         String newReportName = "";
@@ -96,7 +140,7 @@ public class MOEXData {
         //сохраняем текущую дату в заголовке отчета
         DateFormat df = new SimpleDateFormat("dd-MM-yyyy");
         String t = df.format(today);
-        divsExcelData.setStrValueToReportCell(sheet.getRow(0),3,"dated " + t);
+        divsExcelData.setStrValueToReportCell(sheet.getRow(0),6,"по состоянию на: " + t);
         //задаем дату для шаблона имени нового файла отчета
         DateFormat dateFormat = new SimpleDateFormat("dd_MM_yyyy_hh_mm");
         String newDateStr = dateFormat.format(today);
@@ -572,6 +616,19 @@ public class MOEXData {
             response = null;
         }
         logger.log(INFO, "список тикеров считаны успешно");
+        return response;
+    }
+
+    private HttpResponse<JsonNode> getCompanyCurrentMarketData(){
+        HttpResponse<JsonNode> response = null;
+        try {
+            response = Unirest.get("https://iss.moex.com/iss/engines/stock/markets/shares/boards/tqbr/securities.json")
+                    .asJson();
+        } catch (Exception e) {
+            logger.log(SEVERE, "запрос к рыночным данным ММВБ отработал с ошибкой");
+            response = null;
+        }
+        logger.log(INFO, "справочные данные по компаниям считаны успешно");
         return response;
     }
 

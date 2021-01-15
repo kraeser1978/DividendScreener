@@ -305,11 +305,11 @@ public class RapidAPIData {
         return  flag;
     }
 
-    public void monthlyFilterByFundamentals() throws IOException, InterruptedException {
+    public void monthlyFilterByFundamentals(String outputFileName) throws IOException, InterruptedException {
         logger.log(Level.INFO, "фильтрация списка компаний по фундаментальным мультипликаторам:");
         logger.log(Level.INFO, "по продолжительности непрерывных дивидендных выплат  - от 15 лет подряд");
         logger.log(Level.INFO, "по marketCap  - от 2 млрд.долл.");
-        String fileName = Configuration.reportsFolder + props.allUSMarketsSourceFile();
+        String fileName = Configuration.reportsFolder + outputFileName;
         int cycles = tickers.size() / 5;
         int remainder = tickers.size() - (cycles * 5);
         int roundSize = tickers.size() - remainder;
@@ -317,11 +317,11 @@ public class RapidAPIData {
         for (int i = 0; i < roundSize; i+=5) { //обработка списка тикеров общим числом кратным 5
             responseWaiter = new CountDownLatch(5);
             getAsyncData(i,i+5);
-            parseAsyncStockSummaryData();
+            parseAsyncStockSummaryData(outputFileName);
         }
         responseWaiter = new CountDownLatch(remainder);//обработка остатка (последняя партия тикеров меньше 5)
         getAsyncData(roundSize,tickers.size());
-        parseAsyncStockSummaryData();
+        parseAsyncStockSummaryData(outputFileName);
         //подкручиваем формат файла для последующего импорта в других сессиях приложения
         String contents = FileUtils.readFileToString(new File(fileName),"UTF-8");
         String newContents = contents.replace("}{","},{");
@@ -359,8 +359,8 @@ public class RapidAPIData {
         return stockObj;
     }
 
-    public void dumpStockToFile(String ticker) throws IOException {
-        String fileName = Configuration.reportsFolder + props.allUSMarketsSourceFile();
+    public void dumpStockToFile(String ticker,String outputFileName) throws IOException {
+        String fileName = Configuration.reportsFolder + outputFileName;
         stockObj = new Stocks();
         stockObj.setTicker(ticker);
         stockObj.setYield(yieldValue);
@@ -383,7 +383,7 @@ public class RapidAPIData {
         FileUtils.write(new File(fileName),contents,"UTF-8",true);
     }
 
-    public void parseAsyncStockSummaryData() throws IOException {
+    public void parseAsyncStockSummaryData(String outputFileName) throws IOException {
         for (HttpResponse entry: stockSummaryDataResponses ) {
             parseStockSummaryData(entry);
             if (includeDividends) {
@@ -393,7 +393,7 @@ public class RapidAPIData {
                         String endDate = getDateAsEpoch(Calendar.YEAR,0);
                         if (getDividendHistoryData(startDate,endDate,ticker)){
                             if (isDividendPaidOffFor15Years(ticker))
-                                dumpStockToFile(ticker);
+                                dumpStockToFile(ticker,outputFileName);
                         }
                     } else logger.log(Level.INFO, "компания " + ticker + " не соответствует критериям по капитализации и/или продолжительности дивидендных выплат");
                 }
@@ -425,11 +425,11 @@ public class RapidAPIData {
         for (int i = 0; i < roundSize; i+=5) { //обработка списка тикеров общим числом кратным 5
             responseWaiter = new CountDownLatch(5);
             getAsyncData(i,i+5);
-            parseAsyncStockSummaryData();
+            parseAsyncStockSummaryData(fileName);
         }
         responseWaiter = new CountDownLatch(remainder);//обработка остатка (последняя партия тикеров меньше 5)
         getAsyncData(roundSize,tickers.size());
-        parseAsyncStockSummaryData();
+        parseAsyncStockSummaryData(fileName);
         mapper.enable(SerializationFeature.INDENT_OUTPUT);
         mapper.writeValue(new File(fullFileName), listOfStocks);
         stocksListMap.clear();
@@ -490,14 +490,15 @@ public class RapidAPIData {
             dividendRate = jsonObject1.getJSONObject("dividendRate");
         } catch (Exception ex1) {
             logger.log(Level.SEVERE, "запрос dividendRate не вернул данные, пробуем поле trailingAnnualDividendRate ...");
-        }
-        if (dividendRate.toString().equals("{}")) {
             try {
                 dividendRate = jsonObject1.getJSONObject("trailingAnnualDividendRate");
-            } catch (Exception ex1) {
+            } catch (Exception ex2) {
                 logger.log(Level.SEVERE, "запрос trailingAnnualDividendRate не вернул данные - пробуем брать значение из полей dividendYield/trailingAnnualDividendYield  ...");
             }
         }
+//        if (dividendRate.toString().equals("{}") || dividendRate == null) {
+//
+//        }
         //если поле dividendRate содержит значение, рассчитываем yield исходя из него и текущей цены акции
         if (dividendRate != null) {
             dividendRateValue = dividendRate.optDouble("raw");
@@ -563,67 +564,42 @@ public class RapidAPIData {
     }
 
     public void sortStockList(){
-        LinkedHashMap<String, Integer> criteriaPassedMap = new LinkedHashMap<>();
-        LinkedHashMap<String, Integer> sortedStockMap = new LinkedHashMap<>();
         LinkedHashMap<String, Stocks> copyOfStocksListMap = new LinkedHashMap<>();
-        //вычисляем кол-во успешно выполненных критериев по каждой компании
-        for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet()){
-            int countPassed = entry.getValue().calcCountOfPassedTests();
-            criteriaPassedMap.put(entry.getKey(),countPassed);
-        }
-        //сортируем по кол-ву успешно выполненных критериев - от самых лучших компаний к худшим
-        List<Map.Entry<String, Integer>> list = new ArrayList<Map.Entry<String, Integer>>(criteriaPassedMap.entrySet());
-        list.sort(Map.Entry.comparingByValue());
-        Collections.reverse(list);
-        //удаляем лишние компании из оставшегося списка
-        int stocksNumLimit = Integer.parseInt(props.maximumNumberOfStocks());
-        int delta = list.size() - stocksNumLimit;
-        int originalSize = list.size();
-        for (int i = 1; i< delta+1; i++){
-            list.remove(originalSize - i);
-        }
-//        LinkedHashMap<String, Double> yieldMap = new LinkedHashMap<>();
-//        LinkedHashMap<String, Double> sortedYieldMap = new LinkedHashMap<>();
-//        //сортируем по убыванию Yield для компаний с одинаковым количеством выполненных критериев
-//        for (int t=11; t > 7; t--){
-//            //вычисляем кол-во компаний с определенным числом выполненных критериев
-//            for(Map.Entry<String, Integer> entry : list){
-//                int criteria = entry.getValue();
-//                int criteriaCount = Collections.frequency(entry.getKey(), t);
-//            }
-//
-//
-//            int s = 0;
-//            for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet()){
-//                if (s < criteriaCount){
-//                    Double yield = entry.getValue().getYield();
-//                    yieldMap.put(entry.getKey(),yield);
-//                }
-//                s++;
-//            }
-//            //сортируем по Yield по убыванию
-//            List<Map.Entry<String, Double>> yieldList = new ArrayList<Map.Entry<String, Double>>(yieldMap.entrySet());
-//            yieldList.sort(Map.Entry.comparingByValue());
-//            Collections.reverse(yieldList);
-//            //конвертируем лист в хешмап
-//            for (Map.Entry<String, Double> entry : yieldList) {
-//                sortedYieldMap.put(entry.getKey(), entry.getValue());
-//            }
-//            //копируем объекты из оригинального хешмапа в урезанный и отсортированный список
-//            for (Map.Entry<String, Double> entry : sortedYieldMap.entrySet()){
-//                String key = entry.getKey();
-//                Stocks stocks = stocksListMap.get(key);
-//                copyOfStocksListMap.put(key,stocks);
-//            }
-//        }
+        ArrayList<Stocks> stocksList = new ArrayList<>();
+        //заполняем лист
+        for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet())
+            stocksList.add(entry.getValue());
+//        //вычисляем кол-во успешно выполненных критериев по каждой компании
+//        BeanComparator bc = new BeanComparator(Stocks.class, "calcCountOfPassedTests",false);
+//        //сортируем по кол-ву успешно выполненных критериев - от самых лучших компаний к худшим
+//        Collections.sort(stocksList, bc);
+        //сортируем по доходности
+        BeanComparator bc2 = new BeanComparator(Stocks.class, "getYield",false);
+        Collections.sort(stocksList,bc2);
 
-        //конвертируем лист в хешмап
-        for (Map.Entry<String, Integer> entry : list) {
-                sortedStockMap.put(entry.getKey(), entry.getValue());
+//        for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet()){
+//            Stocks stocks = entry.getValue();
+//            int count = stocks.calcCountOfPassedTests();
+//            stocks.setCountOfPassedTests(count);
+//            stocksList.add(stocks);
+//        }
+//        ColumnComparator cc1 = new ColumnComparator(5,false);
+//        ColumnComparator cc2 = new ColumnComparator(3, false);
+//        GroupComparator gc = new GroupComparator(cc1, cc2);
+//        Collections.sort(stocksList, gc);
+
+        int stocksNumLimit = Integer.parseInt(props.maximumNumberOfStocks());
+        int originalSize = stocksList.size();
+        //удаляем лишние компании из оставшегося списка
+        if (originalSize > stocksNumLimit) {
+            int delta = originalSize - stocksNumLimit;
+            for (int i = 1; i< delta+1; i++){
+                stocksList.remove(originalSize - i);
+            }
         }
         //копируем объекты из оригинального хешмапа в урезанный и отсортированный список
-        for (Map.Entry<String, Integer> entry : sortedStockMap.entrySet()){
-            String key = entry.getKey();
+        for (int i = 0; i <stocksList.size(); i++) {
+            String key = stocksList.get(i).getTicker();
             Stocks stocks = stocksListMap.get(key);
             copyOfStocksListMap.put(key,stocks);
         }
