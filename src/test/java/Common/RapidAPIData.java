@@ -239,25 +239,23 @@ public class RapidAPIData {
     }
 
     public void getStocksListFromFinnhub() {
-        ArrayList<String> nasdaqTickers = new ArrayList<>();
+        logger.log(Level.INFO, "запрашиваем общий список тикеров для Common Stock из Finnhub marked data...");
         HttpResponse<JsonNode> response = null;
         try {
-            response = Unirest.get("https://finnhub.io/api/v1/stock/symbol?exchange=US&token=" + props.finnhubToken())
-//                    .header(rapidHost, rapidHostValue)
-//                    .header(rapidKey, rapidKeyValue)
+            response = Unirest.get("https://finnhub.io/api/v1/stock/symbol?exchange=US&currency=USD&securityType=Common%20Stock&token=" + props.finnhubToken())
                     .asJson();
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой ");
+            logger.log(Level.SEVERE, "запрос к Finnhub marked data отработал с ошибкой ");
             e.printStackTrace();
         }
         JSONArray jsonArray = null;
         try{
             jsonArray = response.getBody().getArray();
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "запрос к источнику с marked data отработал с ошибкой - пропускаем компанию");
+            logger.log(Level.SEVERE, "запрос к Finnhub marked data отработал с ошибкой - пропускаем компанию");
             e.printStackTrace();
         }
-
+        //фильтруем по кодам американских бирж, исключаем OTC инструменты
         JSONObject jsonObject = null;
         for (int i=0; i < jsonArray.length();i++){
             try {
@@ -265,8 +263,8 @@ public class RapidAPIData {
             } catch (Exception e) {
                 logger.log(Level.SEVERE, "ошибка");
             }
-            String assetType = jsonObject.optString("type");
-            if (assetType.equals("EQS")){
+            String assetType = jsonObject.optString("mic");
+            if (assetType.contains("X")){
                 String ticker = jsonObject.optString("symbol");
                 tickers.add(ticker);
             }
