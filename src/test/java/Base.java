@@ -38,11 +38,14 @@ public class Base {
         divsCoreData.SetUp();
         if (rapidAPIData == null)
             rapidAPIData = new RapidAPIData();
-        rapidAPIData.getStocksListFromFinnhub();
+//        rapidAPIData.getStocksListFromFinnhub();
         FinnhubData finnhubData = new FinnhubData();
-        finnhubData.tickers = rapidAPIData.tickers;
-        finnhubData.filterByMarketCap();
-        finnhubData.filterByPrice();
+//        finnhubData.tickers = rapidAPIData.tickers;
+//        finnhubData.filterByMarketCap();
+//        finnhubData.filterByPrice();
+        finnhubData.filterByMABreakThrough();
+        finnhubData.filterByRSI();
+        finnhubData.filterByADX();
     }
 
     @Test
