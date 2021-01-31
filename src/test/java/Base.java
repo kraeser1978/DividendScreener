@@ -44,8 +44,9 @@ public class Base {
 //        finnhubData.filterByMarketCap();
 //        finnhubData.filterByPrice();
         finnhubData.filterByMABreakThrough();
-        finnhubData.filterByRSI();
-        finnhubData.filterByADX();
+        finnhubData.generateExcelReport();
+//        finnhubData.filterByRSI();
+//        finnhubData.filterByADX();
     }
 
     @Test

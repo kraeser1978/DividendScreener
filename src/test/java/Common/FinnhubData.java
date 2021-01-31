@@ -8,12 +8,19 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.mashape.unirest.http.HttpResponse;
 import com.mashape.unirest.http.JsonNode;
 import com.mashape.unirest.http.Unirest;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -26,11 +33,51 @@ public class FinnhubData {
     public ArrayList<String> tickers = new ArrayList<String>();
     public ArrayList<String> filteredTickers = new ArrayList<String>();
     ObjectMapper mapper = new ObjectMapper();
+    ArrayList<ArrayList<String>> data = new ArrayList<>();
+
+    public String generateExcelReport() throws IOException {
+        String reportTemplateName = Configuration.reportsFolder + "\\MA_BreakThroug_Filtered_tickers.xlsx";
+        File excelTemplate = new File(reportTemplateName);
+        FileInputStream file = new FileInputStream(excelTemplate);
+        XSSFWorkbook book = new XSSFWorkbook(file);
+        XSSFSheet sheet = book.getSheet("ScreenerResults");
+        int rowNum = 2;//определяем порядковый номер первой строки, в которую нужно начинать запись данных
+        DivsExcelData divsExcelData = new DivsExcelData();
+        for (int i = 0; i < data.size(); i++){
+            String ticker = data.get(i).get(0);
+            Double closePrice = Double.parseDouble(data.get(i).get(1));
+            Double maValue = Double.parseDouble(data.get(i).get(2));
+            Double maGrowthValue = Double.parseDouble(data.get(i).get(3));
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),0,ticker);
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),1,closePrice);
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),2,maValue);
+            divsExcelData.setStrValueToReportCell(sheet.getRow(rowNum),3,maGrowthValue);
+            rowNum++;
+        }
+        String newReportName = "";
+        Calendar cal = Calendar.getInstance();
+        Date today = cal.getTime();
+        //сохраняем текущую дату в заголовке отчета
+        DateFormat df = new SimpleDateFormat("dd-MM-yyyy");
+        String t = df.format(today);
+        divsExcelData.setStrValueToReportCell(sheet.getRow(0),3,"по состоянию на: " + t);
+        //задаем дату для шаблона имени нового файла отчета
+        DateFormat dateFormat = new SimpleDateFormat("dd_MM_yyyy_hh_mm");
+        String newDateStr = dateFormat.format(today);
+        int extPos = reportTemplateName.indexOf(".xlsx");
+        newReportName = reportTemplateName.substring(0,extPos) + "_" + newDateStr + ".xlsx";
+        FileOutputStream fos = new FileOutputStream(newReportName);
+        book.write(fos);
+        book.close();
+        fos.close();
+        file.close();
+        return newReportName;
+    }
 
     public void filterByADX() throws IOException {
         ArrayList<String> tickersCopy = new ArrayList<String>();
         if (filteredTickers.isEmpty())
-            filteredTickers = mapper.readValue(new File(Configuration.reportsFolder + "\\tradeCandidatesTargetList2.json"), new TypeReference<List<String>>(){});
+            filteredTickers = mapper.readValue(new File(Configuration.reportsFolder + "\\RSIFilterSet.json"), new TypeReference<List<String>>(){});
         logger.log(Level.INFO, "отбираем компании с нужным уровнем ADX индикатора");
         for (int i = 0; i< filteredTickers.size(); i++){
             String ticker = filteredTickers.get(i);
@@ -44,13 +91,13 @@ public class FinnhubData {
             Selenide.sleep(800);
         }
         logger.log(Level.INFO, "фильтрация по индикатору ADX завершена, отобрано компаний: " + tickersCopy.size()+1);
-        dumpResults(tickersCopy,"\\tradeCandidatesTargetList3.json");
+        dumpResults(tickersCopy,"\\ADXFilterSet.json");
     }
 
     public void filterByRSI() throws IOException {
         ArrayList<String> tickersCopy = new ArrayList<String>();
         if (filteredTickers.isEmpty())
-            filteredTickers = mapper.readValue(new File(Configuration.reportsFolder + "\\tradeCandidatesTargetList.json"), new TypeReference<List<String>>(){});
+            filteredTickers = mapper.readValue(new File(Configuration.reportsFolder + "\\MAFilterSet.json"), new TypeReference<List<String>>(){});
         logger.log(Level.INFO, "отбираем компании с нужным уровнем RSI индикатора");
         for (int i = 0; i< filteredTickers.size(); i++){
             String ticker = filteredTickers.get(i);
@@ -64,38 +111,50 @@ public class FinnhubData {
             Selenide.sleep(800);
         }
         logger.log(Level.INFO, "фильтрация по индикатору RSI завершена, отобрано компаний: " + tickersCopy.size()+1);
-        dumpResults(tickersCopy,"\\tradeCandidatesTargetList2.json");
+        dumpResults(tickersCopy,"\\RSIFilterSet.json");
     }
 
-    public void filterByMABreakThrough() throws IOException {
+    public ArrayList<ArrayList<String>> filterByMABreakThrough() throws IOException {
         ArrayList<String> tickersCopy = new ArrayList<String>();
         if (filteredTickers.isEmpty())
             filteredTickers = mapper.readValue(new File(Configuration.reportsFolder + "\\tradeCandidatesSourceList.json"), new TypeReference<List<String>>(){});
         logger.log(Level.INFO, "отбираем компании с пробоем MA индикатора");
-        for (int i = 0; i< filteredTickers.size(); i++){
+        int topLimit = filteredTickers.size();
+        int smallLimit = 30;
+        for (int i = 0; i< smallLimit; i++){
             String ticker = filteredTickers.get(i);
             ArrayList<Double> ma = getIndicatorsLastData(ticker,"sma",21);
-            ArrayList<ArrayList<Double>> ma2 = getIndicatorsHistoricalData(ticker,"sma",21);
-            if (ma2.isEmpty()) continue;
             Double openPrice = ma.get(0);
             Double closePrice = ma.get(1);
             Double maValue = ma.get(2);
             if ((openPrice == null) || (closePrice == null) || (maValue == null)) continue;
             //критерий №1: цена закрытия больше цены открытия за тот же день и цена закрытия должна превысить MA
-            if ((closePrice > openPrice) && (closePrice > maValue)) {
+            if ((closePrice > openPrice) && (closePrice > maValue) && (openPrice < maValue)) {
+                ArrayList<ArrayList<Double>> ma50bars = getIndicatorsHistoricalData(ticker,"sma",21);
+                if ((ma50bars.isEmpty()) || (ma50bars == null)) continue;
+                Double previousOpenPrice = ma50bars.get(0).get(48);
+                Double previousClosePrice = ma50bars.get(1).get(48);
+                Double previousMaValue = ma50bars.get(2).get(48);
                 //критерий №2: если цена открытия предыдущей свечи, которая перед последней (вторая с конца), тоже выше МА, исключаем из выборки
-                Double previousOpenPrice = ma2.get(0).get(ma2.size()-2);
-                Double previousClosePrice = ma2.get(1).get(ma2.size()-2);
-                if ((previousClosePrice > previousOpenPrice) && (previousClosePrice > maValue)) continue;
-                //критерий №3: первая пробойная свеча должна быть выше MA на 10% и не должна превышать MA на 40%
-                Double growthRate = (closePrice / maValue * 100) - 100;
-                if ((growthRate > 10) && (growthRate < 40))
-                    tickersCopy.add(ticker);
+                if ((previousClosePrice > previousOpenPrice) && (previousClosePrice > previousMaValue)) continue;
+                //критерий №3: если цена открытия предыдущей свечи выше цены открытия текущей - значит нисходящее движение и это ретест и отбой - исключаем из выборки
+                if (previousOpenPrice > openPrice) continue;
+                //критерий №4: первая пробойная свеча должна быть выше MA на 10% и не должна превышать MA на 40%
+                Double growthRate = (closePrice / maValue) - 1;
+//                if ((growthRate > 10) && (growthRate < 40))
+//                    tickersCopy.add(ticker);
+                ArrayList<String> tickerData = new ArrayList<String>();
+                tickerData.add(ticker);
+                tickerData.add(closePrice.toString());
+                tickerData.add(maValue.toString());
+                tickerData.add(growthRate.toString());
+                data.add(tickerData);
             }
             Selenide.sleep(800);
         }
         logger.log(Level.INFO, "фильтрация по пробою MA завершена, отобрано компаний: " + tickersCopy.size()+1);
-        dumpResults(tickersCopy,"\\tradeCandidatesTargetList.json");
+        dumpResults(tickersCopy,"\\MAFilterSet.json");
+        return data;
     }
 
     public void filterByPrice() throws IOException {
@@ -146,14 +205,14 @@ public class FinnhubData {
         return epochStr;
     }
 
-    private JSONObject sendIndicatorRequest(String ticker, String indicatorType, int length){
+    private JSONObject sendIndicatorRequest(String ticker, String indicatorType, int timeperiod){
         HttpResponse<JsonNode> response = null;
         String startDate = getDateAsEpoch(Calendar.MONTH,-6);
         String endDate = getDateAsEpoch(Calendar.DATE,0);
 //        String endDate = "1610439621";
         try {
             response = Unirest.get("https://finnhub.io/api/v1/indicator?symbol=" + ticker + "&resolution=D&from=" + startDate + "&to=" + endDate +
-                    "&indicator=" + indicatorType + "&timeperiod=" + length + "&token=" + props.finnhubToken())
+                    "&indicator=" + indicatorType + "&timeperiod=" + timeperiod + "&token=" + props.finnhubToken())
                     .asJson();
         } catch (Exception e) {
             logger.log(Level.SEVERE, "для тикера " + ticker + " запрос данных по МА из Finnhub marked data отработал с ошибкой");
@@ -171,9 +230,9 @@ public class FinnhubData {
         return jsonObject;
     }
 
-    private ArrayList<ArrayList<Double>> getIndicatorsHistoricalData(String ticker, String indicatorType, int length){
+    private ArrayList<ArrayList<Double>> getIndicatorsHistoricalData(String ticker, String indicatorType, int timeperiod){
         ArrayList<ArrayList<Double>> indData = new ArrayList<ArrayList<Double>>();
-        JSONObject jsonObject = sendIndicatorRequest(ticker, indicatorType, length);
+        JSONObject jsonObject = sendIndicatorRequest(ticker, indicatorType, timeperiod);
         //сохраняем данные из ответа запроса в 2мерных листах
         //берем цену открытия за последние 50 периодов
         ArrayList<Double> openPrices = getAllQuotesAndIndicator(jsonObject,ticker,"цена открытия","o");
@@ -206,7 +265,7 @@ public class FinnhubData {
         int actualListSize = array2.length();
         int requiredSize = 0;
         //если данных в массиве меньше 50 элементов, прекращаем заполнение
-        if (actualListSize > 50)
+        if (actualListSize > 49)
             requiredSize = 50;
         else
             return quotes;
