@@ -1,5 +1,6 @@
 import Common.DivsCoreData;
 import Common.DivsExcelData;
+import Common.FinnhubData;
 import Common.RapidAPIData;
 import com.codeborne.selenide.Configuration;
 import com.mashape.unirest.http.Unirest;
@@ -29,6 +30,23 @@ public class Base {
 //        allUSMarketsDataFiltering();
         String excelReport = reportsGeneration();
         sendReportByEmail(excelReport);
+    }
+
+    @Test
+    public void tradeAdviserScreener() throws Exception {
+        divsCoreData = new DivsCoreData();
+        divsCoreData.SetUp();
+        if (rapidAPIData == null)
+            rapidAPIData = new RapidAPIData();
+//        rapidAPIData.getStocksListFromFinnhub();
+        FinnhubData finnhubData = new FinnhubData();
+//        finnhubData.tickers = rapidAPIData.tickers;
+//        finnhubData.filterByMarketCap();
+//        finnhubData.filterByPrice();
+        finnhubData.filterByMABreakThrough();
+        finnhubData.generateExcelReport();
+//        finnhubData.filterByRSI();
+//        finnhubData.filterByADX();
     }
 
     @Test
