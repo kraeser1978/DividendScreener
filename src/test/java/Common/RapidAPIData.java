@@ -77,7 +77,7 @@ public class RapidAPIData {
         if (isDividend15Years < 60) {
             logger.log(Level.INFO, "компания " + ticker + " выплачивала дивиденды меньше 15 лет подряд - исключаем ее из выборки...");
             if (stocksListMap.get(ticker) != null)
-                stocksListMap.get(ticker).changeCriteriaExecutionStatus("Yrs",props.testFailed());
+                stocksListMap.get(ticker).changeCriteriaExecutionStatus("No Years",props.testFailed());
             flag = false;
         } else flag = true;
         return flag;
@@ -92,11 +92,11 @@ public class RapidAPIData {
         flag = compareCompanyQuotes(dividends10Years);
         if (flag) {
             logger.log(Level.INFO, "размер дивиденда компании " + ticker + " поступательно рос все время в течение последних 10 лет");
-            stocksListMap.get(ticker).changeCriteriaExecutionStatus("Yrs",props.testPassed());
+            stocksListMap.get(ticker).changeCriteriaExecutionStatus("No Years",props.testPassed());
             stocksListMap.get(ticker).changeCriteriaExecutionStatus("DivCheck",props.testPassed());
         } else {
             logger.log(Level.INFO, "размер дивиденда компании " + ticker + " в течение последних 10 лет некоторое время снижался");
-            stocksListMap.get(ticker).changeCriteriaExecutionStatus("Yrs",props.testPassed());
+            stocksListMap.get(ticker).changeCriteriaExecutionStatus("No Years",props.testPassed());
             stocksListMap.get(ticker).changeCriteriaExecutionStatus("DivCheck",props.testFailed());
         }
         return flag;
@@ -344,11 +344,11 @@ public class RapidAPIData {
         stockObj.setLastPrice(priceValue);
         stockObj.setPE(peValue);
         stockObj.setCompanyName(compName);
-        stockObj.changeCriteriaExecutionStatus("Yrs",props.testPassed());
+        stockObj.changeCriteriaExecutionStatus("No Years",props.testPassed());
         stockObj.changeCriteriaExecutionStatus("Yield",props.testPassed());
-        stockObj.changeCriteriaExecutionStatus("Year",props.testPassed());
+        stockObj.changeCriteriaExecutionStatus("Payouts/ Year",props.testPassed());
         stockObj.changeCriteriaExecutionStatus("Inc.",props.testPassed());
-        stockObj.changeCriteriaExecutionStatus("Ex-Div",props.testPassed());
+        stockObj.changeCriteriaExecutionStatus("Ex-Date",props.testPassed());
         stockObj.changeCriteriaExecutionStatus("Payout",props.testPassed());
         stockObj.changeCriteriaExecutionStatus("($Mil)",props.testPassed());
         stockObj.changeCriteriaExecutionStatus("P/E",props.testPassed());
@@ -365,11 +365,11 @@ public class RapidAPIData {
         stockObj.setLastPrice(priceValue);
         stockObj.setPE(peValue);
         stockObj.setCompanyName(compName);
-        stockObj.changeCriteriaExecutionStatus("Yrs",props.testPassed());
+        stockObj.changeCriteriaExecutionStatus("No Years",props.testPassed());
         stockObj.changeCriteriaExecutionStatus("Yield",props.notTested());
-        stockObj.changeCriteriaExecutionStatus("Year",props.notTested());
+        stockObj.changeCriteriaExecutionStatus("Payouts/ Year",props.notTested());
         stockObj.changeCriteriaExecutionStatus("Inc.",props.notTested());
-        stockObj.changeCriteriaExecutionStatus("Ex-Div",props.notTested());
+        stockObj.changeCriteriaExecutionStatus("Ex-Date",props.notTested());
         stockObj.changeCriteriaExecutionStatus("Payout",props.notTested());
         stockObj.changeCriteriaExecutionStatus("($Mil)",props.testPassed());
         stockObj.changeCriteriaExecutionStatus("P/E",props.notTested());
@@ -632,7 +632,7 @@ public class RapidAPIData {
 
     public boolean compareCompanyQuotes(ArrayList<Double> quotes){
         //метод выполняет сравнение каждого последующего значения элемента массива с предыдущим
-        //если значение какого-то элемента меньше предыдущего, компания исключается из выборки
+        //если значение какого-то элемента меньше предыдущего, компания не проходит критерий отбора по поступательному росту дивидендов в течение 10 лет
         boolean flag = false;
         Collections.reverse(quotes);
         for (int t=1; t < quotes.size(); t++){
@@ -737,26 +737,56 @@ public class RapidAPIData {
         return epochStr;
     }
 
+    public boolean getDivGrowthRate(ArrayList<Double> quotes){
+        //метод находит последнее повышение дивидендов и сравнивает два граничных значения
+        //получаем величину прироста дивиденда в %
+        //если прирост меньше 2%, компания исключается из выборки
+        boolean flag = false;
+        for (int t = 0; t < quotes.size() ; t++){
+            double currentValue = quotes.get(t);
+            double previousValue = quotes.get(t+1);
+            if (previousValue < currentValue) {
+                double rate = (currentValue - previousValue) / previousValue * 100;
+                if (rate >= 2)
+                    flag = true;
+                break;
+            };
+        }
+        return flag;
+    }
+
     public boolean checkDividendsGrowth() {
         logger.log(Level.INFO, "метод проверяет актив на наличие поступательного роста его дивидендов в течение 10 прошедших лет");
         String startDate = getDateAsEpoch(Calendar.YEAR,-10);
         String endDate = getDateAsEpoch(Calendar.YEAR,0);
         boolean flag = false;
+        copyOfStocksListMap.clear();
         for (Map.Entry<String, Stocks> entry : stocksListMap.entrySet()){
             String ticker = entry.getKey();
             logger.log(Level.INFO, "считываем дивиденды по " + ticker + " за последние 10 лет...");
             boolean dividends = getDividendHistoryData(startDate,endDate,ticker);
+            //если дивиденды не считались, пропускаем компанию
             if (!dividends) continue;
+            logger.log(Level.INFO, "выполняем проверку на ежегодный прирост дивидендов от 2% в год...");
+            boolean doesDivGrowAtMin = getDivGrowthRate(dividendAmount);
+            if (!doesDivGrowAtMin) continue;
+            else {
+                copyOfStocksListMap.put(ticker,entry.getValue());
+                logger.log(Level.INFO, "прирост дивидендов компании " + ticker + " составил от 2% в год");
+                copyOfStocksListMap.get(ticker).changeCriteriaExecutionStatus("Inc.",props.testPassed());
+            }
             logger.log(Level.INFO, "выполняем проверку на то, что дивиденды за выбранный период поступательно росли...");
             flag = compareCompanyQuotes(dividendAmount);
             if (flag) {
                 logger.log(Level.INFO, "размер дивиденда компании " + ticker + " поступательно рос все время в течение выбранного периода");
-                stocksListMap.get(ticker).changeCriteriaExecutionStatus("DivCheck",props.testPassed());
+                copyOfStocksListMap.get(ticker).changeCriteriaExecutionStatus("DivCheck",props.testPassed());
             } else {
                 logger.log(Level.INFO, "размер дивиденда компании " + ticker + " в течение выбранного периода некоторое время снижался");
-                stocksListMap.get(ticker).changeCriteriaExecutionStatus("DivCheck",props.testFailed());
+                copyOfStocksListMap.get(ticker).changeCriteriaExecutionStatus("DivCheck",props.testFailed());
             }
         }
+        stocksListMap.clear();
+        stocksListMap = (LinkedHashMap<String, Stocks>) copyOfStocksListMap.clone();
         return true;
     }
 

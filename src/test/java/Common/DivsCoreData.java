@@ -437,22 +437,23 @@ public class DivsCoreData {
     }
 
     public void downloadDivsFile() throws IOException, URISyntaxException {
-        String downloadedName = Configuration.reportsFolder + "\\USDividendChampions";
+        String downloadedName = Configuration.reportsFolder + "\\USDividendChampions1";
         File downloadedXlsFile = new File(downloadedName + ".xlsx");
         File downloadedFile = new File(downloadedName);
         logger.log(Level.INFO, "загружаем Excel файл с дивидендами в текущую папку...");
         download(props.dripinvestingURL(), 10000);
         logger.log(Level.INFO, "файл скачан");
-        logger.log(Level.INFO,"переименовываем файл, удаляем предыдущую версию, если она существует...");
-        if (downloadedXlsFile.exists()) FileUtils.forceDelete(downloadedXlsFile);
-        FileUtils.moveFile(downloadedFile, downloadedXlsFile);
+        if (downloadedXlsFile.exists()) {
+            logger.log(Level.INFO,"переименовываем файл, удаляем предыдущую версию, если она существует...");
+            FileUtils.forceDelete(downloadedXlsFile);
+            FileUtils.moveFile(downloadedFile, downloadedXlsFile);
+        }
         logger.log(Level.INFO, "загрузка завершена");
         DivsExcelData divsExcelData = new DivsExcelData();
         String newName = Configuration.reportsFolder + "\\USDividendChampions_singleTab";
         File newFileName = new File(newName + ".xlsx");
         //удаляем предыдущую версию, если она существует
         if (newFileName.exists()) FileUtils.forceDelete(newFileName);
-//        FileUtils.moveFile(downloadedXlsFile, newFileName);
         logger.log(Level.INFO, "удаляем лишние вкладки в файле...");
         divsExcelData.removeSheets(downloadedXlsFile,newFileName);
         logger.log(Level.INFO,"файл готов к работе");
