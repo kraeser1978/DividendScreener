@@ -29,6 +29,7 @@ public class Base {
         excelDataFiltering();
 //        allUSMarketsDataFiltering();
         String excelReport = reportsGeneration();
+//        String excelReport = "C:\\Users\\kraes\\IdeaProjects\\DividendScreener\\target\\DividendScreenerResultsTemplate_17_05_2021_09_30.xlsx";
         sendReportByEmail(excelReport);
     }
 
@@ -96,12 +97,12 @@ public class Base {
         rapidAPIData = new RapidAPIData();
         boolean skipMajorTests = rapidAPIData.isStockListCanBeReUsed(props.excelSourceFile(),7);
         if (!skipMajorTests){
-            HashMap<String,String> criteriaExecutionStatuses = new LinkedHashMap<>();
+            HashMap<String,String> criteriaExecutionStatuses = new LinkedHashMap<String,String>();
             criteriaExecutionStatuses = divsExcelData.setDefaultExecutionStatus(props.notTested());
             logger.log(Level.INFO, "Yrs - компании, которые платят дивиденды 15 и более лет");
-            Cell numberOfYears = divsExcelData.findCell(companiesSheet,"Yrs");
+            Cell numberOfYears = divsExcelData.findCell(companiesSheet,"No Years");
             divsExcelData.setAutoFilter(companiesSheet,numberOfYears.getColumnIndex(),"15");
-            criteriaExecutionStatuses.put("Yrs",props.testPassed());
+            criteriaExecutionStatuses.put("No Years",props.testPassed());
             logger.log(Level.INFO, "выполняем предварительный отбор по следующим фильтрам:");
             for (Map.Entry<String, ArrayList<String>> entry : divsExcelData.fieldsSearchCriterias.entrySet()) {
                 String key = entry.getKey();
@@ -115,8 +116,8 @@ public class Base {
             rapidAPIData.tickers = divsExcelData.getCompaniesTickersByNames(companiesSheet,divsExcelData.companyNames);
             rapidAPIData.filterBySummaryDetails(props.excelSourceFile());
         }
-        rapidAPIData.compareStockAgainstEthalonETF();
         rapidAPIData.checkDividendsGrowth();
+        rapidAPIData.compareStockAgainstEthalonETF();
         rapidAPIData.checkIncomeGrowth();
     }
 

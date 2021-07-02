@@ -73,6 +73,14 @@ public class DivsExcelData {
         cell.setCellValue(value);
     }
 
+    public void setStrValueToReportCell(Row row, int columnSeqNo, Date value){
+        Cell cell = row.getCell(columnSeqNo);
+        if (cell == null) {
+            cell = row.createCell(columnSeqNo);
+        }
+        cell.setCellValue(value);
+    }
+
     public String generateExcelReport(LinkedHashMap<String, Stocks> selection) throws IOException {
         String reportTemplateName = Configuration.reportsFolder + "\\DividendScreenerResultsTemplate.xlsx";
         File excelTemplate = new File(reportTemplateName);
@@ -106,6 +114,8 @@ public class DivsExcelData {
         String newReportName = "";
         Calendar cal = Calendar.getInstance();
         Date today = cal.getTime();
+        //логируем дату в отчет
+        setStrValueToReportCell(sheet.getRow(0), 13,today);
         DateFormat dateFormat = new SimpleDateFormat("dd_MM_yyyy_hh_mm");
         String newDateStr = dateFormat.format(today);
         int extPos = reportTemplateName.indexOf(".xlsx");
@@ -125,7 +135,7 @@ public class DivsExcelData {
         if (!isToContinue) return false;
         logger.log(Level.INFO,criteriaDescription);
         XSSFRow row = null; double expectedValue = 0,currentValue = 0; Date currentDate,expectedDate;
-        XSSFSheet sheet = companiesBook.getSheet("All CCC");
+        XSSFSheet sheet = companiesBook.getSheet("All");
         //для каждой компании из списка выбираем только те, которые соответствуют критерию
         for (int i = 0; i < companyNames.size();i++){
             //находим компанию в общем списке
@@ -183,11 +193,11 @@ public class DivsExcelData {
 
     public HashMap<String,String> setDefaultExecutionStatus(String testStatus){
         HashMap<String,String> criteriaExecutionStatuses = new LinkedHashMap<>();
-        criteriaExecutionStatuses.put("Yrs",testStatus);
+        criteriaExecutionStatuses.put("No Years",testStatus);
         criteriaExecutionStatuses.put("Yield",testStatus);
-        criteriaExecutionStatuses.put("Year",testStatus);
+        criteriaExecutionStatuses.put("Payouts/ Year",testStatus);
         criteriaExecutionStatuses.put("Inc.",testStatus);
-        criteriaExecutionStatuses.put("Ex-Div",testStatus);
+        criteriaExecutionStatuses.put("Ex-Date",testStatus);
         criteriaExecutionStatuses.put("Payout",testStatus);
         criteriaExecutionStatuses.put("($Mil)",testStatus);
         criteriaExecutionStatuses.put("P/E",testStatus);
@@ -198,50 +208,35 @@ public class DivsExcelData {
     }
 
     public void setSearchCriteria(XSSFSheet sheet){
-//        ArrayList<String> Yrs = new ArrayList<String>();
-//        ArrayList<String> Yield = new ArrayList<String>();
         ArrayList<String> Payouts = new ArrayList<String>();
-        ArrayList<String> mr = new ArrayList<String>();
+//        ArrayList<String> mr = new ArrayList<String>();
         ArrayList<String> exDiv = new ArrayList<String>();
-        ArrayList<String> EPS = new ArrayList<String>();
-        ArrayList<String> MktCap = new ArrayList<String>();
-//        ArrayList<String> pe = new ArrayList<String>();
-//        Yrs.add("15");
-//        Yrs.add("Yrs - компании, которые платят дивиденды 15 и более лет");
-//        Yrs.add("GREATER_THAN_OR_EQUALS");
-//        Yield.add("2.50");
-//        Yield.add("Div.Yield - дивиденды от 2.5% годовых");
-//        Yield.add("GREATER_THAN_OR_EQUALS");
+//        ArrayList<String> EPS = new ArrayList<String>();
+//        ArrayList<String> MktCap = new ArrayList<String>();
         Payouts.add("4");
         Payouts.add("Payouts/Year - частота выплаты дивидендов - не реже 4 раз в год");
         Payouts.add("GREATER_THAN_OR_EQUALS");
-        mr.add("2.00");
-        mr.add("MR%Inc. - ежегодный прирост дивидендов от 2% в год");
-        mr.add("GREATER_THAN_OR_EQUALS");
+//        mr.add("2.00");
+//        mr.add("MR%Inc. - ежегодный прирост дивидендов от 2% в год");
+//        mr.add("GREATER_THAN_OR_EQUALS");
         exDiv.add(getPrevYear());
         exDiv.add("Last Increased on: Ex-Div - дата последнего повышения дивидендов - не позже, чем год назад");
         exDiv.add("GREATER_THAN_OR_EQUALS");
-        EPS.add("70.00");
-        EPS.add("EPS%Payout - доля прибыли, направляемая на выплату дивидендов, не более 70%");
-        EPS.add("LESSER_THAN");
-        MktCap.add("2000.00");
-        MktCap.add("MktCap($Mil) - компании с капитализацией свыше 2млрд.долл");
-        MktCap.add("GREATER_THAN_OR_EQUALS");
-//        pe.add("21.00");
-//        pe.add("TTM P/E - срок окупаемости инвестиций в акции компании в годах - для американского рынка не должен превышать 21");
-//        pe.add("LESSER_THAN");
+//        EPS.add("70.00");
+//        EPS.add("EPS%Payout - доля прибыли, направляемая на выплату дивидендов, не более 70%");
+//        EPS.add("LESSER_THAN");
+//        MktCap.add("2000.00");
+//        MktCap.add("MktCap($Mil) - компании с капитализацией свыше 2млрд.долл");
+//        MktCap.add("GREATER_THAN_OR_EQUALS");
         //заполняем хешмеп данными по критериям поиска по полям
-//        fieldsSearchCriterias.put("Yrs",Yrs);
-//        fieldsSearchCriterias.put("Yield",Yield);
-        fieldsSearchCriterias.put("Year",Payouts);
-        fieldsSearchCriterias.put("Inc.",mr);
-        fieldsSearchCriterias.put("Ex-Div",exDiv);
-        fieldsSearchCriterias.put("Payout",EPS);
-        fieldsSearchCriterias.put("($Mil)",MktCap);
-//        fieldsSearchCriterias.put("P/E",pe);
+        fieldsSearchCriterias.put("Payouts/ Year",Payouts);
+//        fieldsSearchCriterias.put("Inc.",mr);
+        fieldsSearchCriterias.put("Ex-Date",exDiv);
+//        fieldsSearchCriterias.put("Payout",EPS);
+//        fieldsSearchCriterias.put("($Mil)",MktCap);
         //ищем строку с шапкой таблицы - названием полей
         logger.log(Level.INFO, "находим поля, по которым будет проводиться отбор компаний...");
-        Cell numberOfYears = findCell(sheet,"Yrs");
+        Cell numberOfYears = findCell(sheet,"Symbol");
         XSSFRow row = (XSSFRow) numberOfYears.getRow();
         for(Cell cell : row) {
             //записываем названия всех полей в массив
@@ -302,7 +297,7 @@ public class DivsExcelData {
     public ArrayList<String> getCompaniesNamesByTickers(XSSFSheet sheet, ArrayList<String> tickers){
         ArrayList<String> names = new ArrayList<String>();
         //определяем порядковый номер поля с тикером
-        Cell company = findCell(sheet,"Name");
+        Cell company = findCell(sheet,"Company");
         int nameColumn = company.getColumnIndex();
         //для каждой отобранной компании считываем ее тикер
         for (int i=0; i< tickers.size(); i++){
@@ -321,11 +316,10 @@ public class DivsExcelData {
     public static XSSFRow findCompanyRow(XSSFSheet sheet, String companyName) {
         XSSFRow companyRow = null;
         //задаем границы поиска - первую и последнюю строку списка компаний
-        Cell name = findCell(sheet,"Name");
+        Cell name = findCell(sheet,"Company");
         int nameColumn = name.getColumnIndex();
         int nameFirstRow = name.getRowIndex();
-        Cell endOfList = findCell(sheet,"Averages for All");
-        int lastRowNumber = endOfList.getRowIndex() - 2;
+        int lastRowNumber = sheet.getLastRowNum();
         //ищем в поле с названиями компаний
         for (int i = nameFirstRow; i < lastRowNumber;i++) {
             //по очереди считываем
@@ -356,8 +350,8 @@ public class DivsExcelData {
         FileInputStream fis=new FileInputStream(sourceFile);
         Workbook wb= WorkbookFactory.create(fis);
         for (int i = wb.getNumberOfSheets() - 1; i >= 0; i--) {
-            if (!wb.getSheetName(i).contentEquals("All CCC") && !wb.getSheetName(i).contentEquals("Historical")) //This is a place holder. You will insert your logic here to get the sheets that you want.
-                wb.removeSheetAt(i); //Just remove the sheets that don't match your criteria in the if statement above
+            if (!wb.getSheetName(i).contentEquals("All"))
+                wb.removeSheetAt(i);
         }
         FileOutputStream fos = new FileOutputStream(destFile);
         wb.write(fos);
@@ -367,7 +361,7 @@ public class DivsExcelData {
     public XSSFSheet getDivsSheet(File fileName) throws IOException {
         FileInputStream file = new FileInputStream(fileName);
         XSSFWorkbook book = new XSSFWorkbook(file);
-        XSSFSheet sheet = book.getSheet("All CCC");
+        XSSFSheet sheet = book.getSheet("All");
         book.close();
         file.close();
         return sheet;
@@ -448,7 +442,7 @@ public class DivsExcelData {
 
     public void getAllCompaniesNames(XSSFSheet sheet){
         //метод считывает список всех названий компаний из файла Excel
-        Cell name = findCell(sheet,"Name");
+        Cell name = findCell(sheet,"Company");
         int nameColumn = name.getColumnIndex();
         int firstRowToStart = name.getRowIndex()+1;
         int lastRowToEnd = findCell(sheet,"Averages for All").getRowIndex() - 2;
@@ -482,8 +476,8 @@ public class DivsExcelData {
         CTCustomFilter myFilter1= myCustomFilter.addNewCustomFilter();
         myFilter1.setOperator(STFilterOperator.GREATER_THAN_OR_EQUAL);
         myFilter1.setVal(value);
-        nameColumn = findCell(sheet,"Name").getColumnIndex();
-        yieldColumn = findCell(sheet,"Yield").getColumnIndex();
+        nameColumn = findCell(sheet,"Company").getColumnIndex();
+        yieldColumn = findCell(sheet,"Div Yield").getColumnIndex();
         // We have to apply the filter ourselves by hiding the rows:
         for (Row row : sheet) {
             for (Cell c : row) {

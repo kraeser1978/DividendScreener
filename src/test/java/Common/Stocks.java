@@ -37,11 +37,11 @@ public class Stocks {
     public void setDefaultExecutionStatus() {
         boolean isMapEmpty = criteriaExecutionStatuses.isEmpty();
         if (isMapEmpty){
-            criteriaExecutionStatuses.put("Yrs", props.testPassed());
+            criteriaExecutionStatuses.put("No Years", props.testPassed());
             criteriaExecutionStatuses.put("Yield", props.notTested());
-            criteriaExecutionStatuses.put("Year", props.notTested());
+            criteriaExecutionStatuses.put("Payouts/ Year", props.notTested());
             criteriaExecutionStatuses.put("Inc.", props.notTested());
-            criteriaExecutionStatuses.put("Ex-Div", props.notTested());
+            criteriaExecutionStatuses.put("Ex-Date", props.notTested());
             criteriaExecutionStatuses.put("Payout", props.notTested());
             criteriaExecutionStatuses.put("($Mil)", props.testPassed());
             criteriaExecutionStatuses.put("P/E", props.notTested());
