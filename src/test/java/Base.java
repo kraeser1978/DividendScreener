@@ -24,7 +24,7 @@ public class Base {
     public static XSSFSheet companiesSheet;
 
     @Test
-    public void main() throws Exception {
+    public static void main(String[] args) throws Exception {
         preparation();
         excelDataFiltering();
 //        allUSMarketsDataFiltering();
@@ -65,7 +65,7 @@ public class Base {
         reportsGeneration();
     }
 
-    private void sendReportByEmail(String excelFinalReport){
+    private static void sendReportByEmail(String excelFinalReport){
         if (divsCoreData.props.isToSendReportByEmail().equals("true")) {
             DateFormat dateFormat = new SimpleDateFormat("dd MMM yyyy");
             Date today = new Date();
@@ -78,10 +78,10 @@ public class Base {
         }
     }
 
-    private void preparation() throws Exception {
+    private static void preparation() throws Exception {
         divsCoreData = new DivsCoreData();
         divsCoreData.SetUp();
-//        divsCoreData.downloadDivsFile();
+        divsCoreData.downloadDivsFile();
         String newName = Configuration.reportsFolder + "\\USDividendChampions_singleTab";
         File newFileName = new File(newName + ".xlsx");
         divsExcelData = new DivsExcelData();
@@ -92,7 +92,7 @@ public class Base {
         divsExcelData.setSearchCriteria(companiesSheet);
     }
 
-    public void excelDataFiltering() throws Exception {
+    public static void excelDataFiltering() throws Exception {
         boolean criteriaStatus = false;
         rapidAPIData = new RapidAPIData();
         boolean skipMajorTests = rapidAPIData.isStockListCanBeReUsed(props.excelSourceFile(),7);
@@ -138,7 +138,7 @@ public class Base {
         rapidAPIData.checkIncomeGrowth();
     }
 
-    public String reportsGeneration() throws Exception {
+    public static String reportsGeneration() throws Exception {
         logger.log(Level.INFO, "формирование отчета с результатами отбора компаний...");
         rapidAPIData.sortStockList();
         String excelReport = divsExcelData.generateExcelReport(rapidAPIData.stocksListMap);

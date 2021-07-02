@@ -436,8 +436,8 @@ public class DivsCoreData {
         log.setLevel(Level.CONFIG);
     }
 
-    public void downloadDivsFile() throws IOException, URISyntaxException {
-        String downloadedName = Configuration.reportsFolder + "\\USDividendChampions1";
+    public void downloadDivsFile() throws IOException {
+        String downloadedName = Configuration.reportsFolder + "\\USDividendChampions";
         File downloadedXlsFile = new File(downloadedName + ".xlsx");
         File downloadedFile = new File(downloadedName);
         logger.log(Level.INFO, "загружаем Excel файл с дивидендами в текущую папку...");

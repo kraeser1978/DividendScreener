@@ -32,7 +32,7 @@ import java.util.*;
 import java.util.logging.Logger;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
-import static jp.qpg.ExcelTo.pdf;
+
 
 public class MOEXData {
     private static Logger logger = Logger.getLogger(MOEXData.class.getSimpleName());
@@ -152,28 +152,6 @@ public class MOEXData {
         fos.close();
         file.close();
         return newReportName;
-    }
-
-    public void convertExcel2PDF2(String sourceExcel, String targetPDF){
-        int count = 0;
-        try (InputStream in = Files.newInputStream(Paths.get(sourceExcel));
-             Workbook book = WorkbookFactory.create(in);
-             OutputStream out = Files.newOutputStream(Paths.get(targetPDF)))
-//             OutputStream outText = Files.newOutputStream(Paths.get(toTextPath)))
-        {
-            logger.info("processing: " + sourceExcel);
-            pdf(book, out, printer -> {
-                printer.setPageSize(PDRectangle.A4, false);
-                printer.setFontSize(10.5f);
-                printer.setMargin(15);
-                printer.setLineSpace(5);
-                printer.setDrawMarginLine(true);
-            });
-            logger.info("converted: " + sourceExcel + ", " + targetPDF);
-            count++;
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
     }
 
     public String convertExcel2PDF(String sourceExcel) throws IOException, DocumentException {

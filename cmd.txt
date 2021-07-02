@@ -1,0 +1,4 @@
+mvn package
+cd C:\Users\Administrator\IdeaProjects\DividendScreener\target\test-classes
+jar cfe C:\divscreener\divscreener.jar Base Base.class Common
+java -Dfile.encoding=Cp866 -classpath "C:\divscreener\*" Base
